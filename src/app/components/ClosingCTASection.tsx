@@ -83,7 +83,7 @@ export function ClosingCTASection() {
           className="mt-10 flex items-center gap-2 text-white/25 hover:text-white/50 transition-colors cursor-pointer"
         >
           <Mail className="w-3.5 h-3.5" />
-          <span className="text-[12px] font-medium tracking-wide">invest@naravo.ai</span>
+          <span className="text-[12px] font-medium tracking-wide">Tucanajoy@gmail.com</span>
         </motion.div>
 
         {/* Footer strip */}

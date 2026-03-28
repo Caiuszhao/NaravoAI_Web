@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Play, ChevronDown, Sparkles, ArrowRight } from 'lucide-react';
 import logoImg from '../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png';
+import bgVideo from '../../assets/BGVideo_cut.mp4';
 
 export function HeroSection() {
+  const [videoReady, setVideoReady] = useState(false);
+
   return (
     <section className="relative h-[100dvh] min-h-[600px] w-full flex flex-col overflow-hidden bg-black">
       {/* Brand Header */}
@@ -51,13 +55,27 @@ export function HeroSection() {
           transition={{ duration: 12, ease: 'easeOut' }}
           src="https://images.unsplash.com/photo-1750192524484-36450bbb1dd6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzY2ktZmklMjBjaW5lbWF0aWMlMjBkYXJrJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzc0NTk5NDUxfDA&ixlib=rb-4.1.0&q=80&w=1080"
           alt="Naravo AI Cinematic Environment"
-          className="w-full h-full object-cover opacity-50"
+          className={`w-full h-full object-cover transition-opacity duration-700 ${
+            videoReady ? 'opacity-0' : 'opacity-50'
+          }`}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/70 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#000000]/70 to-transparent h-1/2" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000000_100%)] opacity-80" />
+        <video
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${
+            videoReady ? 'opacity-50' : 'opacity-0'
+          }`}
+          src={bgVideo}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          onLoadedData={() => setVideoReady(true)}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/50 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#000000]/50 to-transparent h-1/2" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000000_100%)] opacity-55" />
         {/* Desktop: darken right side less so image breathes more */}
-        <div className="hidden lg:block absolute inset-0 bg-gradient-to-r from-black/90 via-black/40 to-transparent" />
+        <div className="hidden lg:block absolute inset-0 bg-gradient-to-r from-black/70 via-black/25 to-transparent" />
       </div>
 
       {/* Mobile layout: bottom-aligned content */}
@@ -100,7 +118,7 @@ export function HeroSection() {
             <div className="absolute -inset-1 bg-gradient-to-r from-white/30 via-white/10 to-white/30 rounded-2xl blur-md opacity-40 group-hover:opacity-100 transition duration-700" />
             <button className="relative flex items-center justify-center gap-3 w-full py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.2)] border border-white/20">
               <Play className="w-5 h-5 fill-black" />
-              Experience the Live Demo
+              Try the Live Demo
             </button>
           </div>
 
@@ -146,7 +164,7 @@ export function HeroSection() {
                 <div className="absolute -inset-1 bg-gradient-to-r from-white/30 via-white/10 to-white/30 rounded-2xl blur-md opacity-40 group-hover:opacity-100 transition duration-700" />
                 <button className="relative flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.2)] border border-white/20 whitespace-nowrap">
                   <Play className="w-5 h-5 fill-black" />
-                  Experience the Live Demo
+                  Try the Live Demo
                 </button>
               </div>
 

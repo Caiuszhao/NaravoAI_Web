@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Fingerprint, BrainCircuit, Globe2 } from 'lucide-react';
 import interactionImage from '../../assets/c44981d37b8b400632b02c54d9b603b6c41cf8be.png';
@@ -39,6 +39,12 @@ const CARDS = [
 ];
 
 export function WhyThisFeelsNewSection() {
+  const [loadedImages, setLoadedImages] = useState<Record<number, boolean>>({});
+
+  const handleImageLoaded = (index: number) => {
+    setLoadedImages((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+  };
+
   return (
     <section className="py-24 md:py-32 bg-[#000000] relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.02)_0%,transparent_50%)] pointer-events-none" />
@@ -79,10 +85,20 @@ export function WhyThisFeelsNewSection() {
               >
                 {/* Top image strip */}
                 <div className="relative h-40 md:h-44 lg:h-52 overflow-hidden">
+                  <div
+                    className={`absolute inset-0 bg-gradient-to-br from-white/8 via-white/3 to-transparent transition-opacity duration-500 ${
+                      loadedImages[idx] ? 'opacity-0' : 'opacity-100'
+                    }`}
+                  />
                   <img
                     src={card.image}
                     alt={card.title}
-                    className="w-full h-full object-cover opacity-55 group-hover:opacity-80 transition-opacity duration-700 scale-105 group-hover:scale-100 transition-transform"
+                    loading="lazy"
+                    decoding="async"
+                    onLoad={() => handleImageLoaded(idx)}
+                    className={`w-full h-full object-cover scale-105 group-hover:scale-100 transition-all duration-700 ${
+                      loadedImages[idx] ? 'opacity-55 group-hover:opacity-80' : 'opacity-0'
+                    }`}
                   />
                   <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]" />
                   <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
