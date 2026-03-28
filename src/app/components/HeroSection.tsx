@@ -71,6 +71,11 @@ export function HeroSection() {
           preload="auto"
           onLoadedData={() => setVideoReady(true)}
         />
+        {!videoReady && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-full border-2 border-[#2a2a2a] border-t-[#4a4a4a] animate-spin" />
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/50 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#000000]/50 to-transparent h-1/2" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000000_100%)] opacity-55" />

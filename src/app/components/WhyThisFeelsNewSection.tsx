@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Fingerprint, BrainCircuit, Globe2 } from 'lucide-react';
 import interactionImage from '../../assets/c44981d37b8b400632b02c54d9b603b6c41cf8be.png';
@@ -40,6 +40,62 @@ const CARDS = [
 
 export function WhyThisFeelsNewSection() {
   const [loadedImages, setLoadedImages] = useState<Record<number, boolean>>({});
+  const [imageOpacity, setImageOpacity] = useState<Record<number, number>>({});
+  const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  useEffect(() => {
+    let frame = 0;
+
+    const update = () => {
+      frame = 0;
+      const center = window.innerHeight / 2;
+      const maxDist = center || 1;
+      const next: Record<number, number> = {};
+
+      cardRefs.current.forEach((el, idx) => {
+        if (!el) {
+          return;
+        }
+        const rect = el.getBoundingClientRect();
+        const cardCenter = rect.top + rect.height / 2;
+        const dist = Math.abs(cardCenter - center);
+        const t = Math.max(0, 1 - dist / maxDist);
+        next[idx] = 0.35 + t * 0.45;
+      });
+
+      setImageOpacity((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(next);
+        if (prevKeys.length !== nextKeys.length) {
+          return next;
+        }
+        for (const key of nextKeys) {
+          if (prev[Number(key)] !== next[Number(key)]) {
+            return next;
+          }
+        }
+        return prev;
+      });
+    };
+
+    const onScroll = () => {
+      if (frame) {
+        return;
+      }
+      frame = window.requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
 
   const handleImageLoaded = (index: number) => {
     setLoadedImages((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
@@ -77,6 +133,9 @@ export function WhyThisFeelsNewSection() {
             return (
               <motion.div
                 key={idx}
+                ref={(el) => {
+                  cardRefs.current[idx] = el;
+                }}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-10%' }}
@@ -96,9 +155,10 @@ export function WhyThisFeelsNewSection() {
                     loading="lazy"
                     decoding="async"
                     onLoad={() => handleImageLoaded(idx)}
-                    className={`w-full h-full object-cover scale-105 group-hover:scale-100 transition-all duration-700 ${
-                      loadedImages[idx] ? 'opacity-55 group-hover:opacity-80' : 'opacity-0'
-                    }`}
+                    className="w-full h-full object-cover scale-105 group-hover:scale-100 transition-all duration-700"
+                    style={{
+                      opacity: loadedImages[idx] ? imageOpacity[idx] ?? 0.35 : 0,
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]" />
                   <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
