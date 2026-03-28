@@ -61,7 +61,7 @@ export function HeroSection() {
         />
         <video
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${
-            videoReady ? 'opacity-50' : 'opacity-0'
+            videoReady ? 'opacity-58' : 'opacity-0'
           }`}
           src={bgVideo}
           autoPlay
@@ -72,15 +72,15 @@ export function HeroSection() {
           onLoadedData={() => setVideoReady(true)}
         />
         {!videoReady && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-12 h-12 rounded-full border-2 border-[#2a2a2a] border-t-[#4a4a4a] animate-spin" />
+          <div className="absolute top-[22%] md:top-[18%] left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <div className="w-14 h-14 rounded-full border-2 border-white/30 border-t-white/60 animate-spin shadow-[0_0_24px_rgba(255,255,255,0.2)]" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/50 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#000000]/50 to-transparent h-1/2" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000000_100%)] opacity-55" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/45 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#000000]/45 to-transparent h-1/2" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000000_100%)] opacity-50" />
         {/* Desktop: darken right side less so image breathes more */}
-        <div className="hidden lg:block absolute inset-0 bg-gradient-to-r from-black/70 via-black/25 to-transparent" />
+        <div className="hidden lg:block absolute inset-0 bg-gradient-to-r from-black/65 via-black/20 to-transparent" />
       </div>
 
       {/* Mobile layout: bottom-aligned content */}

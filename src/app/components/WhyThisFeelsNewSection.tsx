@@ -41,6 +41,8 @@ const CARDS = [
 export function WhyThisFeelsNewSection() {
   const [loadedImages, setLoadedImages] = useState<Record<number, boolean>>({});
   const [imageOpacity, setImageOpacity] = useState<Record<number, number>>({});
+  const [imageMaskOpacity, setImageMaskOpacity] = useState<Record<number, number>>({});
+  const [activeCardIndex, setActiveCardIndex] = useState<number | null>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export function WhyThisFeelsNewSection() {
       const center = window.innerHeight / 2;
       const maxDist = center || 1;
       const next: Record<number, number> = {};
+      const nextMask: Record<number, number> = {};
 
       cardRefs.current.forEach((el, idx) => {
         if (!el) {
@@ -60,7 +63,8 @@ export function WhyThisFeelsNewSection() {
         const cardCenter = rect.top + rect.height / 2;
         const dist = Math.abs(cardCenter - center);
         const t = Math.max(0, 1 - dist / maxDist);
-        next[idx] = 0.35 + t * 0.45;
+        next[idx] = 0.35 + t * 0.63;
+        nextMask[idx] = 0.55 - t * 0.5;
       });
 
       setImageOpacity((prev) => {
@@ -72,6 +76,20 @@ export function WhyThisFeelsNewSection() {
         for (const key of nextKeys) {
           if (prev[Number(key)] !== next[Number(key)]) {
             return next;
+          }
+        }
+        return prev;
+      });
+
+      setImageMaskOpacity((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(nextMask);
+        if (prevKeys.length !== nextKeys.length) {
+          return nextMask;
+        }
+        for (const key of nextKeys) {
+          if (prev[Number(key)] !== nextMask[Number(key)]) {
+            return nextMask;
           }
         }
         return prev;
@@ -99,6 +117,13 @@ export function WhyThisFeelsNewSection() {
 
   const handleImageLoaded = (index: number) => {
     setLoadedImages((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+  };
+
+  const handleCardPress = (index: number) => {
+    if (window.matchMedia('(min-width: 768px)').matches) {
+      return;
+    }
+    setActiveCardIndex((prev) => (prev === index ? null : index));
   };
 
   return (
@@ -130,6 +155,7 @@ export function WhyThisFeelsNewSection() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 relative z-10">
           {CARDS.map((card, idx) => {
             const Icon = card.icon;
+            const isActive = activeCardIndex === idx;
             return (
               <motion.div
                 key={idx}
@@ -140,7 +166,18 @@ export function WhyThisFeelsNewSection() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-10%' }}
                 transition={{ delay: idx * 0.15, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                className="group relative overflow-hidden rounded-[24px] bg-[#050505] border border-white/5 hover:border-white/12 transition-all duration-500 shadow-[0_10px_40px_rgba(0,0,0,0.5)] hover:shadow-[0_20px_60px_rgba(0,0,0,0.7)]"
+                className={`group relative overflow-hidden rounded-[24px] bg-[#050505] border border-white/5 hover:border-white/12 transition-all duration-500 shadow-[0_10px_40px_rgba(0,0,0,0.5)] hover:shadow-[0_20px_60px_rgba(0,0,0,0.7)] ${
+                  isActive ? 'border-white/12 shadow-[0_20px_60px_rgba(0,0,0,0.7)]' : ''
+                }`}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleCardPress(idx)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleCardPress(idx);
+                  }
+                }}
               >
                 {/* Top image strip */}
                 <div className="relative h-40 md:h-44 lg:h-52 overflow-hidden">
@@ -155,29 +192,54 @@ export function WhyThisFeelsNewSection() {
                     loading="lazy"
                     decoding="async"
                     onLoad={() => handleImageLoaded(idx)}
-                    className="w-full h-full object-cover scale-105 group-hover:scale-100 transition-all duration-700"
+                    className={`w-full h-full object-cover scale-105 group-hover:scale-100 transition-all duration-700 ${
+                      isActive ? 'scale-100' : ''
+                    }`}
                     style={{
-                      opacity: loadedImages[idx] ? imageOpacity[idx] ?? 0.35 : 0,
+                      opacity: loadedImages[idx] ? Math.min((imageOpacity[idx] ?? 0.35) + (isActive ? 0.12 : 0), 0.98) : 0,
                     }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]" />
-                  <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
+                  <div
+                    className="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]"
+                    style={{
+                      opacity: loadedImages[idx] ? Math.max((imageMaskOpacity[idx] ?? 0.55) - (isActive ? 0.12 : 0), 0) : 1,
+                    }}
+                  />
+                  <div
+                    className={`absolute inset-0 bg-gradient-to-br ${card.accent} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`}
+                    style={{ opacity: isActive ? 1 : undefined }}
+                  />
                 </div>
 
                 {/* Content */}
                 <div className="relative p-6 md:p-7 flex flex-col gap-5">
-                  <div className={`w-12 h-12 shrink-0 rounded-[14px] bg-white/[0.03] flex items-center justify-center border border-white/5 transition-all duration-500 ${card.color}`}>
-                    <Icon className="w-5 h-5 text-white/50 group-hover:text-white transition-colors duration-500 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" strokeWidth={1.5} />
+                  <div
+                    className={`w-12 h-12 shrink-0 rounded-[14px] bg-white/[0.03] flex items-center justify-center border border-white/5 transition-all duration-500 ${card.color} ${
+                      isActive ? 'shadow-[0_0_20px_rgba(255,255,255,0.2)]' : ''
+                    }`}
+                  >
+                    <Icon
+                      className={`w-5 h-5 text-white/50 group-hover:text-white transition-colors duration-500 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)] ${
+                        isActive ? 'text-white' : ''
+                      }`}
+                      strokeWidth={1.5}
+                    />
                   </div>
 
                   <div className="flex flex-col gap-3">
                     <h4
-                      className="text-[17px] md:text-[18px] font-semibold text-white/90 leading-tight group-hover:text-white transition-colors"
+                      className={`text-[17px] md:text-[18px] font-semibold text-white/90 leading-tight group-hover:text-white transition-colors ${
+                        isActive ? 'text-white' : ''
+                      }`}
                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                     >
                       {card.title}
                     </h4>
-                    <p className="text-[13px] md:text-[14px] text-white/40 leading-relaxed font-light group-hover:text-white/60 transition-colors">
+                    <p
+                      className={`text-[13px] md:text-[14px] text-white/40 leading-relaxed font-light group-hover:text-white/60 transition-colors ${
+                        isActive ? 'text-white/60' : ''
+                      }`}
+                    >
                       {card.description}
                     </p>
                   </div>
