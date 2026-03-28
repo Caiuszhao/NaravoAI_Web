@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Hand, Mic, MousePointerClick, ChevronRight, Activity, HeartPulse } from 'lucide-react';
 import clsx from 'clsx';
@@ -54,14 +54,50 @@ const SCENES = [
   },
 ];
 
+function SwipeHandIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-14 h-14 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M10.4 3.4c.72 0 1.3.58 1.3 1.3v7.5l.9-1.2a1.34 1.34 0 0 1 2.3.3l.2.4.7-.6a1.3 1.3 0 0 1 2.06.64l.16.52.52-.2a1.3 1.3 0 0 1 1.77 1.11l.02.39v4.2c0 2.85-2.3 5.16-5.16 5.2h-.27c-3.42 0-6.2-2.78-6.2-6.2V4.7c0-.72.58-1.3 1.3-1.3Z"
+        fill="rgba(255,255,255,0.2)"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M14.9 11.7v4.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M17.4 11.6v3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M11.7 6.8v7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function DemoPreviewSection() {
   const [activeScene, setActiveScene] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [transitionDirection, setTransitionDirection] = useState(1);
+  const [swipeCueKey, setSwipeCueKey] = useState(0);
+  const [showSwipeCue, setShowSwipeCue] = useState(false);
+  const touchStartY = useRef<number | null>(null);
+  const touchDeltaY = useRef(0);
+
+  const goToScene = (nextIndex: number, direction: number) => {
+    setTransitionDirection(direction);
+    if (direction > 0) {
+      setSwipeCueKey((prev) => prev + 1);
+      setShowSwipeCue(true);
+    }
+    setActiveScene((nextIndex + SCENES.length) % SCENES.length);
+    setProgress(0);
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
+          setTransitionDirection(1);
+          setSwipeCueKey((current) => current + 1);
+          setShowSwipeCue(true);
           setActiveScene((current) => (current + 1) % SCENES.length);
           return 0;
         }
@@ -121,11 +157,35 @@ export function DemoPreviewSection() {
               <AnimatePresence mode="wait">
                 <motion.div
                   key={scene.id}
-                  initial={{ opacity: 0, scale: 1.05 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.8 }}
+                  initial={{ opacity: 0, y: transitionDirection > 0 ? 120 : -120 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: transitionDirection > 0 ? -120 : 120 }}
+                  transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
                   className="absolute inset-0 bg-black"
+                  onTouchStart={(event) => {
+                    touchStartY.current = event.touches[0].clientY;
+                    touchDeltaY.current = 0;
+                  }}
+                  onTouchMove={(event) => {
+                    if (touchStartY.current === null) {
+                      return;
+                    }
+                    touchDeltaY.current = event.touches[0].clientY - touchStartY.current;
+                  }}
+                  onTouchEnd={() => {
+                    if (Math.abs(touchDeltaY.current) < 40) {
+                      touchStartY.current = null;
+                      touchDeltaY.current = 0;
+                      return;
+                    }
+                    if (touchDeltaY.current < 0) {
+                      goToScene(activeScene + 1, 1);
+                    } else {
+                      goToScene(activeScene - 1, -1);
+                    }
+                    touchStartY.current = null;
+                    touchDeltaY.current = 0;
+                  }}
                 >
                   <img src={scene.image} alt={scene.title} className="w-full h-full object-cover opacity-90" />
                   <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90" />
@@ -134,19 +194,6 @@ export function DemoPreviewSection() {
 
                   {/* HUD */}
                   <div className="absolute top-[3.5rem] w-full px-5 flex flex-col gap-3 z-30">
-                    <div className="flex gap-1">
-                      {SCENES.map((s, idx) => (
-                        <div key={s.id} className="h-[2px] rounded-full bg-white/10 overflow-hidden flex-1 backdrop-blur-sm">
-                          {idx === activeScene && (
-                            <motion.div
-                              className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,1)]"
-                              style={{ width: `${progress}%` }}
-                            />
-                          )}
-                          {idx < activeScene && <div className="h-full w-full bg-white/80" />}
-                        </div>
-                      ))}
-                    </div>
                     <div className="flex items-center gap-3 bg-black/60 backdrop-blur-xl rounded-full px-3 py-1.5 border border-white/10 w-fit shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
                       <HeartPulse className="w-3.5 h-3.5 text-red-400 animate-pulse" />
                       <span className="text-[9px] font-bold tracking-[0.25em] text-white/70 uppercase">{scene.status}</span>
@@ -232,6 +279,21 @@ export function DemoPreviewSection() {
                   </div>
                 </motion.div>
               </AnimatePresence>
+              <AnimatePresence>
+                {showSwipeCue && transitionDirection > 0 && (
+                  <motion.div
+                    key={swipeCueKey}
+                    initial={{ opacity: 0.95, y: 0 }}
+                    animate={{ opacity: [0.95, 0.95, 0], y: [0, -90, -120] }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+                    onAnimationComplete={() => setShowSwipeCue(false)}
+                    className="absolute right-7 bottom-28 z-[80] pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)]"
+                  >
+                    <SwipeHandIcon />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
@@ -248,7 +310,9 @@ export function DemoPreviewSection() {
               return (
                 <motion.button
                   key={s.id}
-                  onClick={() => { setActiveScene(idx); setProgress(0); }}
+                  onClick={() => {
+                    goToScene(idx, idx > activeScene ? 1 : -1);
+                  }}
                   className={clsx(
                     'group w-full text-left p-5 rounded-[20px] border transition-all duration-500 relative overflow-hidden',
                     isActive
@@ -316,7 +380,9 @@ export function DemoPreviewSection() {
             return (
               <button
                 key={s.id}
-                onClick={() => { setActiveScene(idx); setProgress(0); }}
+                onClick={() => {
+                  goToScene(idx, idx > activeScene ? 1 : -1);
+                }}
                 className={clsx(
                   'flex items-center gap-2 px-3 py-2 rounded-full border text-[11px] font-semibold transition-all',
                   isActive
