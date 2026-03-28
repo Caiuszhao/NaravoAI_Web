@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { CheckCircle2, ShieldCheck, Target, Layers, TrendingUp } from 'lucide-react';
 
@@ -32,6 +32,65 @@ const METRICS = [
 ];
 
 export function WhyItMattersSection() {
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileFocus, setMobileFocus] = useState<Record<number, number>>({});
+  const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  useEffect(() => {
+    let frame = 0;
+    let width = window.innerWidth;
+
+    const update = () => {
+      frame = 0;
+      const currentIsMobile = window.innerWidth < 768;
+      setIsMobile(currentIsMobile);
+      if (!currentIsMobile) {
+        setMobileFocus({});
+        return;
+      }
+      const center = window.innerHeight / 2;
+      const maxDist = center || 1;
+      const next: Record<number, number> = {};
+      cardRefs.current.forEach((el, idx) => {
+        if (!el) {
+          return;
+        }
+        const rect = el.getBoundingClientRect();
+        const cardCenter = rect.top + rect.height / 2;
+        const dist = Math.abs(cardCenter - center);
+        next[idx] = Math.max(0, 1 - dist / maxDist);
+      });
+      setMobileFocus(next);
+    };
+
+    const onScroll = () => {
+      if (frame) {
+        return;
+      }
+      frame = window.requestAnimationFrame(update);
+    };
+
+    const onResize = () => {
+      const nextWidth = window.innerWidth;
+      if (Math.abs(nextWidth - width) < 2) {
+        return;
+      }
+      width = nextWidth;
+      onScroll();
+    };
+
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
+    return () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
   return (
     <section className="py-24 md:py-32 bg-black relative border-t border-white/[0.04] overflow-hidden">
       {/* Decorative rings */}
@@ -74,23 +133,51 @@ export function WhyItMattersSection() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
           {POINTS.map((pt, idx) => {
             const Icon = pt.icon;
+            const focus = mobileFocus[idx] ?? 0;
             return (
               <motion.div
                 key={idx}
+                ref={(el) => {
+                  cardRefs.current[idx] = el;
+                }}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-5%' }}
                 transition={{ delay: idx * 0.12, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                 className="group flex items-start gap-5 p-5 md:p-6 rounded-[20px] bg-gradient-to-r from-white/[0.03] to-transparent border border-white/[0.05] hover:bg-white/[0.05] hover:border-white/10 transition-all duration-500"
+                style={
+                  isMobile
+                    ? {
+                        backgroundColor: `rgba(255,255,255,${0.03 + focus * 0.02})`,
+                        borderColor: `rgba(255,255,255,${0.05 + focus * 0.05})`,
+                      }
+                    : undefined
+                }
               >
-                <div className="w-11 h-11 shrink-0 rounded-[14px] bg-white/[0.03] flex items-center justify-center text-white/40 border border-white/5 group-hover:text-white/80 group-hover:border-white/10 transition-all duration-300 mt-0.5">
+                <div
+                  className="w-11 h-11 shrink-0 rounded-[14px] bg-white/[0.03] flex items-center justify-center text-white/40 border border-white/5 group-hover:text-white/80 group-hover:border-white/10 transition-all duration-300 mt-0.5"
+                  style={
+                    isMobile
+                      ? {
+                          color: `rgba(255,255,255,${0.4 + focus * 0.4})`,
+                          borderColor: `rgba(255,255,255,${0.05 + focus * 0.05})`,
+                        }
+                      : undefined
+                  }
+                >
                   <Icon className="w-5 h-5" strokeWidth={1.5} />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-[14px] md:text-[15px] font-medium text-white/80 leading-snug tracking-wide group-hover:text-white transition-colors">
+                  <p
+                    className="text-[14px] md:text-[15px] font-medium text-white/80 leading-snug tracking-wide group-hover:text-white transition-colors"
+                    style={isMobile ? { color: `rgba(255,255,255,${0.8 + focus * 0.2})` } : undefined}
+                  >
                     {pt.text}
                   </p>
-                  <p className="text-[12px] md:text-[13px] text-white/30 leading-relaxed font-light group-hover:text-white/50 transition-colors">
+                  <p
+                    className="text-[12px] md:text-[13px] text-white/30 leading-relaxed font-light group-hover:text-white/50 transition-colors"
+                    style={isMobile ? { color: `rgba(255,255,255,${0.3 + focus * 0.2})` } : undefined}
+                  >
                     {pt.subtext}
                   </p>
                 </div>
