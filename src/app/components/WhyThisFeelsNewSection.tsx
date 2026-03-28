@@ -44,6 +44,7 @@ export function WhyThisFeelsNewSection() {
   const [imageMaskOpacity, setImageMaskOpacity] = useState<Record<number, number>>({});
   const [activeCardIndex, setActiveCardIndex] = useState<number | null>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const viewportWidthRef = useRef(0);
 
   useEffect(() => {
     let frame = 0;
@@ -103,15 +104,25 @@ export function WhyThisFeelsNewSection() {
       frame = window.requestAnimationFrame(update);
     };
 
+    const onResize = () => {
+      const width = window.innerWidth;
+      if (Math.abs(width - viewportWidthRef.current) < 2) {
+        return;
+      }
+      viewportWidthRef.current = width;
+      onScroll();
+    };
+
+    viewportWidthRef.current = window.innerWidth;
     update();
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
+    window.addEventListener('resize', onResize);
     return () => {
       if (frame) {
         window.cancelAnimationFrame(frame);
       }
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('resize', onResize);
     };
   }, []);
 

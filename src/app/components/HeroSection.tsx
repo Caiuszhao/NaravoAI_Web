@@ -8,7 +8,7 @@ export function HeroSection() {
   const [videoReady, setVideoReady] = useState(false);
 
   return (
-    <section className="relative h-[100dvh] min-h-[600px] w-full flex flex-col overflow-hidden bg-black">
+    <section className="relative h-[100svh] md:h-[100dvh] min-h-[600px] w-full flex flex-col overflow-hidden bg-black">
       {/* Brand Header */}
       <header className="absolute top-0 left-0 w-full px-6 md:px-10 lg:px-16 py-6 z-50 flex items-center justify-between">
         <motion.div
