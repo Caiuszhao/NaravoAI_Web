@@ -91,9 +91,9 @@ export function DemoPreviewSection() {
             className="text-[1.9rem] md:text-[2.6rem] lg:text-[3rem] leading-[1.1] font-bold mb-4 tracking-tight text-white/90"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
           >
-            Not multiple choice.
+            Natural actions.
             <br />
-            <span className="text-white drop-shadow-lg">Intuitive action.</span>
+            <span className="text-white drop-shadow-lg">Real consequences.</span>
           </h2>
           <p className="text-[14px] md:text-[15px] text-white/40 leading-relaxed font-light max-w-[500px] mx-auto">
             React to emotional tension and narrative urgency exactly like you would in a real situation. The AI adapts instantly.
