@@ -6,23 +6,23 @@ import CUSTOM_LOGO_URL from '../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2ea
 export const DEMOS = [
   {
     id: 1,
-    title: "Breach the Mainframe",
-    hook: "The core is failing. You must bypass the firewall before the drone arrives.",
+    title: "Wasteland Run: Escape Partner",
+    hook: "You and a dangerous ally are chased by a horde to a jammed shelter gate. Break the lock in 5 seconds, or get dragged in bleeding as the dead close in.",
     videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/00f5df14-2645-4ca5-8d99-bde8b833c6f4/original",
     mediaType: "video",
-    interactionMethod: "Rapid Tap",
-    objective: "Break open the security gate",
+    interactionMethod: "Rapid Tap (5s)",
+    objective: "Smash open the shelter lock before the horde reaches you",
     interactionHint: "TAP RAPIDLY TO OVERRIDE",
     commentCount: "3,778"
   },
   {
     id: 2,
-    title: "De-escalation",
-    hook: "She's losing trust. Choose your words carefully to calm the situation.",
+    title: "One Man Station",
+    hook: "A lone astronaut drifting on a dying station restores one unstable relay burst. Your reply decides whether he risks one last EVA repair or records a final goodbye.",
     videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/535584e2-0805-4b3b-96a8-fe0eb24a2205/original",
     mediaType: "video",
-    interactionMethod: "Voice / Reply",
-    objective: "Affect character's trust and emotion",
+    interactionMethod: "Voice or Text Reply",
+    objective: "Send the message that shapes his final decision",
     interactionHint: "HOLD TO SPEAK",
     commentCount: "2,154"
   }
