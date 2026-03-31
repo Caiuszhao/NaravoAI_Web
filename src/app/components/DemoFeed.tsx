@@ -8,7 +8,8 @@ export const DEMOS = [
     id: 1,
     title: "Breach the Mainframe",
     hook: "The core is failing. You must bypass the firewall before the drone arrives.",
-    videoBg: "https://images.unsplash.com/photo-1643602810290-24bb5b22141a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzY2ktZmklMjBjeWJlcnB1bmslMjBjaGFyYWN0ZXIlMjBwb3J0cmFpdCUyMHZlcnRpY2FsfGVufDF8fHx8MTc3NDkzMDczNXww&ixlib=rb-4.1.0&q=80&w=1080",
+    videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/00f5df14-2645-4ca5-8d99-bde8b833c6f4/original",
+    mediaType: "video",
     interactionMethod: "Rapid Tap",
     objective: "Break open the security gate",
     interactionHint: "TAP RAPIDLY TO OVERRIDE",
@@ -18,7 +19,8 @@ export const DEMOS = [
     id: 2,
     title: "De-escalation",
     hook: "She's losing trust. Choose your words carefully to calm the situation.",
-    videoBg: "https://images.unsplash.com/photo-1677226234951-fc5363d2db6a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBkYXJrJTIwdGVuc2UlMjBwb3J0cmFpdCUyMHZlcnRpY2FsfGVufDF8fHx8MTc3NDkzMDc0MXww&ixlib=rb-4.1.0&q=80&w=1080",
+    videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/535584e2-0805-4b3b-96a8-fe0eb24a2205/original",
+    mediaType: "video",
     interactionMethod: "Voice / Reply",
     objective: "Affect character's trust and emotion",
     interactionHint: "HOLD TO SPEAK",
@@ -180,11 +182,23 @@ export function DemoFeed({
         >
           {/* Background Image */}
           <div className="absolute inset-0 z-0 bg-black">
-            <img 
-              src={demo.videoBg} 
-              alt={demo.title}
-              className="w-full h-full object-cover opacity-80"
-            />
+            {demo.mediaType === 'video' ? (
+              <video
+                src={demo.videoBg}
+                className="w-full h-full object-cover opacity-80"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              <img
+                src={demo.videoBg}
+                alt={demo.title}
+                className="w-full h-full object-cover opacity-80"
+              />
+            )}
             {/* Cinematic overlays */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.5)_100%)]" />
