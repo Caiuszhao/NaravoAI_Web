@@ -112,7 +112,7 @@ export function DemoPreviewSection() {
   const Icon = scene.icon;
 
   return (
-    <section className="py-24 md:py-32 bg-[#000000] overflow-hidden relative">
+    <section id="naravo-engine-live-demo" className="py-24 md:py-32 bg-[#000000] overflow-hidden relative">
       <div className="absolute top-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.015)_0%,transparent_70%)] pointer-events-none" />
 

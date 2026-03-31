@@ -32,9 +32,9 @@ const FLOW_STEPS = [
   },
   {
     id: 4,
-    title: 'Unlock continuation',
+    title: 'Continue with the character',
     icon: Unlock,
-    description: 'Explore branching worlds seamlessly. The narrative expands, remembers, and keeps adapting.',
+    description: 'The scene opens into ongoing character dialogue beyond the video, with memory that carries forward.',
     color: 'text-purple-400',
     glow: 'shadow-[0_0_20px_rgba(192,132,252,0.15)]',
     bg: 'from-purple-500/10',
@@ -57,7 +57,7 @@ export function UserExperienceFlowSection() {
             Experience Flow
           </h3>
           <p className="text-[14px] md:text-[15px] text-white/40 max-w-[400px] mx-auto leading-relaxed">
-            An intuitive, productized journey designed to feel natural on any screen.
+            An intuitive flow where users interact inside the scene, then keep the relationship going with characters beyond the video.
           </p>
         </div>
 

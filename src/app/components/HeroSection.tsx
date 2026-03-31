@@ -6,6 +6,24 @@ import bgVideo from '../../assets/BGVideo_cut.mp4';
 
 export function HeroSection() {
   const [videoReady, setVideoReady] = useState(false);
+  const scrollToSection = (sectionId: string) => {
+    const targetSection = document.getElementById(sectionId);
+    if (!targetSection) {
+      return;
+    }
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    targetSection.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  };
+
+  const handleExploreVisionClick = () => {
+    scrollToSection('naravo-engine-live-demo');
+  };
+  const handleGetInTouchClick = () => {
+    scrollToSection('naravo-closing-cta');
+  };
 
   return (
     <section className="relative h-[100svh] md:h-[100dvh] min-h-[600px] w-full flex flex-col overflow-hidden bg-black">
@@ -39,6 +57,8 @@ export function HeroSection() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
+            type="button"
+            onClick={handleGetInTouchClick}
             className="hidden md:flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/15 backdrop-blur-md hover:bg-white/15 transition-colors text-[11px] font-semibold text-white/80 uppercase tracking-widest"
           >
             Get in Touch
@@ -127,7 +147,11 @@ export function HeroSection() {
             </button>
           </div>
 
-          <button className="text-center text-[11px] text-white/40 hover:text-white/80 transition-colors uppercase tracking-[0.15em] font-medium pt-2">
+          <button
+            type="button"
+            onClick={handleExploreVisionClick}
+            className="text-center text-[11px] text-white/40 hover:text-white/80 transition-colors uppercase tracking-[0.15em] font-medium pt-2"
+          >
             Explore the Vision
           </button>
         </motion.div>
@@ -173,7 +197,11 @@ export function HeroSection() {
                 </button>
               </div>
 
-              <button className="flex items-center gap-2 text-[12px] text-white/40 hover:text-white/80 transition-colors uppercase tracking-[0.15em] font-medium whitespace-nowrap">
+              <button
+                type="button"
+                onClick={handleExploreVisionClick}
+                className="flex items-center gap-2 text-[12px] text-white/40 hover:text-white/80 transition-colors uppercase tracking-[0.15em] font-medium whitespace-nowrap"
+              >
                 Explore the Vision
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>

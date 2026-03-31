@@ -191,7 +191,7 @@ export function WhyThisFeelsNewSection() {
                 }}
               >
                 {/* Top image strip */}
-                <div className="relative h-40 md:h-44 lg:h-52 overflow-hidden">
+                <div className="relative h-48 md:h-44 lg:h-52 overflow-hidden">
                   <div
                     className={`absolute inset-0 bg-gradient-to-br from-white/8 via-white/3 to-transparent transition-opacity duration-500 ${
                       loadedImages[idx] ? 'opacity-0' : 'opacity-100'

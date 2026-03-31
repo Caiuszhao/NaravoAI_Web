@@ -12,7 +12,7 @@ export function ClosingCTASection() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[radial-gradient(circle,rgba(255,255,255,0.02)_0%,transparent_70%)]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-[480px] md:max-w-[680px] lg:max-w-[800px] mx-auto px-6 md:px-10 flex flex-col items-center">
+      <div id="naravo-closing-cta" className="relative z-10 w-full max-w-[480px] md:max-w-[680px] lg:max-w-[800px] mx-auto px-6 md:px-10 flex flex-col items-center">
         {/* Icon */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
