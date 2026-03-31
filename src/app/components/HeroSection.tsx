@@ -4,7 +4,7 @@ import { Play, ChevronDown, Sparkles, ArrowRight } from 'lucide-react';
 import logoImg from '../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png';
 import bgVideo from '../../assets/BGVideo_cut.mp4';
 
-export function HeroSection() {
+export function HeroSection({ onTryLiveDemo }: { onTryLiveDemo?: () => void }) {
   const [videoReady, setVideoReady] = useState(false);
   const scrollToSection = (sectionId: string) => {
     const targetSection = document.getElementById(sectionId);
@@ -141,7 +141,11 @@ export function HeroSection() {
         >
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-white/30 via-white/10 to-white/30 rounded-2xl blur-md opacity-40 group-hover:opacity-100 transition duration-700" />
-            <button className="relative flex items-center justify-center gap-3 w-full py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.2)] border border-white/20">
+            <button
+              type="button"
+              onClick={onTryLiveDemo}
+              className="relative flex items-center justify-center gap-3 w-full py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.2)] border border-white/20"
+            >
               <Play className="w-5 h-5 fill-black" />
               Try the Live Demo
             </button>
@@ -191,7 +195,11 @@ export function HeroSection() {
             <div className="flex items-center gap-4 mt-2">
               <div className="relative group">
                 <div className="absolute -inset-1 bg-gradient-to-r from-white/30 via-white/10 to-white/30 rounded-2xl blur-md opacity-40 group-hover:opacity-100 transition duration-700" />
-                <button className="relative flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.2)] border border-white/20 whitespace-nowrap">
+                <button
+                  type="button"
+                  onClick={onTryLiveDemo}
+                  className="relative flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all active:scale-[0.98] shadow-[0_0_30px_rgba(255,255,255,0.2)] border border-white/20 whitespace-nowrap"
+                >
                   <Play className="w-5 h-5 fill-black" />
                   Try the Live Demo
                 </button>
