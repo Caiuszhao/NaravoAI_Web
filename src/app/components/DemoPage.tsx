@@ -122,7 +122,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
                     </h1>
 
                     <p className="text-[17px] text-white/60 leading-relaxed font-light">
-                      {activeDemo.hook}
+                      {activeDemo.showcaseHook}
                     </p>
 
                     <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-white/[0.06]">

@@ -7,7 +7,8 @@ export const DEMOS = [
   {
     id: 1,
     title: "Wasteland Run: Escape Partner",
-    hook: "You and a dangerous ally are chased by a horde to a jammed shelter gate. Break the lock in 5 seconds, or get dragged in bleeding as the dead close in.",
+    feedHook: "You and your partner race to a jammed shelter gate. Break the lock in 5 seconds before the horde catches you.",
+    showcaseHook: "You and a dangerous ally are chased by a horde to a jammed shelter gate. Break the lock in 5 seconds, or get dragged in bleeding as the dead close in.",
     videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/00f5df14-2645-4ca5-8d99-bde8b833c6f4/original",
     mediaType: "video",
     interactionMethod: "Rapid Tap (5s)",
@@ -18,7 +19,8 @@ export const DEMOS = [
   {
     id: 2,
     title: "One Man Station",
-    hook: "A lone astronaut drifting on a dying station restores one unstable relay burst. Your reply decides whether he risks one last EVA repair or records a final goodbye.",
+    feedHook: "A lone astronaut gets one unstable relay burst. Your reply decides if he risks a final EVA repair or records a goodbye.",
+    showcaseHook: "A lone astronaut drifting on a dying station restores one unstable relay burst. Your reply decides whether he risks one last EVA repair or records a final goodbye.",
     videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/535584e2-0805-4b3b-96a8-fe0eb24a2205/original",
     mediaType: "video",
     interactionMethod: "Voice or Text Reply",
@@ -218,8 +220,8 @@ export function DemoFeed({
                     <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                       {demo.title}
                     </h2>
-                    <p className="text-white/80 text-[12px] font-light leading-snug max-w-[280px]">
-                      {demo.hook}
+                    <p className="text-white/80 text-[12px] font-light leading-snug max-w-[280px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+                      {demo.feedHook}
                     </p>
                   </div>
                 </motion.div>
