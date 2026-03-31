@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, MoreHorizontal, Navigation, Hand, Heart, MessageCircle, Plus, Maximize, Share2, Wand2 } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Navigation, Hand, Heart, MessageCircle, Plus, Maximize, Share2, Wand2, X } from 'lucide-react';
 import CUSTOM_LOGO_URL from '../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png';
 
 export const DEMOS = [
@@ -11,7 +11,8 @@ export const DEMOS = [
     videoBg: "https://images.unsplash.com/photo-1643602810290-24bb5b22141a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzY2ktZmklMjBjeWJlcnB1bmslMjBjaGFyYWN0ZXIlMjBwb3J0cmFpdCUyMHZlcnRpY2FsfGVufDF8fHx8MTc3NDkzMDczNXww&ixlib=rb-4.1.0&q=80&w=1080",
     interactionMethod: "Rapid Tap",
     objective: "Break open the security gate",
-    interactionHint: "TAP RAPIDLY TO OVERRIDE"
+    interactionHint: "TAP RAPIDLY TO OVERRIDE",
+    commentCount: "3,778"
   },
   {
     id: 2,
@@ -20,11 +21,29 @@ export const DEMOS = [
     videoBg: "https://images.unsplash.com/photo-1677226234951-fc5363d2db6a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBkYXJrJTIwdGVuc2UlMjBwb3J0cmFpdCUyMHZlcnRpY2FsfGVufDF8fHx8MTc3NDkzMDc0MXww&ixlib=rb-4.1.0&q=80&w=1080",
     interactionMethod: "Voice / Reply",
     objective: "Affect character's trust and emotion",
-    interactionHint: "HOLD TO SPEAK"
+    interactionHint: "HOLD TO SPEAK",
+    commentCount: "2,154"
   }
 ];
 
 export { CUSTOM_LOGO_URL };
+
+const MOCK_COMMENTS_BY_DEMO: Record<number, Array<{ id: number; name: string; handle: string; text: string; likes: string; time: string }>> = {
+  1: [
+    { id: 1, name: 'Ava', handle: '@ava.story', text: 'This sequence feels intense. The tap mechanic works really well.', likes: '1.2K', time: '2h' },
+    { id: 2, name: 'Noah', handle: '@noahplays', text: 'Love the pressure buildup. Feels like a real mission moment.', likes: '846', time: '3h' },
+    { id: 3, name: 'Luna', handle: '@lunaverse', text: 'The gate-break objective is super clear and easy to follow.', likes: '529', time: '5h' },
+    { id: 4, name: 'Kai', handle: '@kai.ai', text: 'The haptic-style visual cues are very satisfying here.', likes: '302', time: '6h' },
+    { id: 5, name: 'Mia', handle: '@miaonmobile', text: 'I replayed this one a few times. Great pacing.', likes: '211', time: '8h' },
+  ],
+  2: [
+    { id: 1, name: 'Ethan', handle: '@ethan.chat', text: 'The tone shift in this scenario is excellent.', likes: '938', time: '1h' },
+    { id: 2, name: 'Sophia', handle: '@sophiaux', text: 'Voice-first interaction makes this feel very human.', likes: '711', time: '2h' },
+    { id: 3, name: 'Mason', handle: '@masonbuilds', text: 'Great example of emotion-driven narrative design.', likes: '503', time: '4h' },
+    { id: 4, name: 'Isla', handle: '@isla.notes', text: 'This one has stronger character tension than most demos I have seen.', likes: '296', time: '7h' },
+    { id: 5, name: 'Leo', handle: '@leo.mobile', text: 'Would love to see multiple reply options in the next version.', likes: '184', time: '9h' },
+  ],
+};
 
 export function DemoFeed({
   onIndexChange,
@@ -38,6 +57,9 @@ export function DemoFeed({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [likedByDemoId, setLikedByDemoId] = useState<Record<number, boolean>>({});
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [activeCommentsDemoId, setActiveCommentsDemoId] = useState<number | null>(null);
 
   const isProgrammaticScroll = useRef(false);
   const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,6 +77,22 @@ export function DemoFeed({
       if (onIndexChange) onIndexChange(index);
     }, 150);
   };
+
+  const handleToggleLike = (demoId: number) => {
+    setLikedByDemoId((previous) => ({
+      ...previous,
+      [demoId]: !previous[demoId],
+    }));
+  };
+  const handleOpenComments = (demoId: number) => {
+    setActiveCommentsDemoId(demoId);
+    setIsCommentsOpen(true);
+  };
+  const handleCloseComments = () => {
+    setIsCommentsOpen(false);
+  };
+  const activeCommentsDemo = DEMOS.find((demo) => demo.id === activeCommentsDemoId) ?? DEMOS[0];
+  const activeComments = MOCK_COMMENTS_BY_DEMO[activeCommentsDemo.id] ?? [];
 
   useEffect(() => {
     if (containerRef.current && activeIndex !== undefined) {
@@ -135,7 +173,7 @@ export function DemoFeed({
         onScroll={handleScroll}
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {DEMOS.map((demo, idx) => (
+        {DEMOS.map((demo) => (
         <div 
           key={demo.id} 
           className="w-full h-full snap-start relative flex flex-col justify-end overflow-hidden"
@@ -191,17 +229,23 @@ export function DemoFeed({
                     </div>
 
                     <div className="flex flex-row items-center gap-1.5">
-                      <button className="flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform">
+                      <button
+                        onClick={() => handleToggleLike(demo.id)}
+                        className={`flex items-center justify-center hover:scale-110 active:scale-90 transition-transform ${likedByDemoId[demo.id] ? 'text-red-500' : 'text-white'}`}
+                      >
                         <Heart className="w-6 h-6 fill-current drop-shadow-md" />
                       </button>
                       <span className="text-white font-semibold text-[12px] drop-shadow-md">136.1K</span>
                     </div>
 
                     <div className="flex flex-row items-center gap-1.5">
-                      <button className="flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform">
+                      <button
+                        onClick={() => handleOpenComments(demo.id)}
+                        className="flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform"
+                      >
                         <MessageCircle className="w-6 h-6 fill-current drop-shadow-md" style={{ transform: 'scaleX(-1)' }} />
                       </button>
-                      <span className="text-white font-semibold text-[12px] drop-shadow-md">3778</span>
+                      <span className="text-white font-semibold text-[12px] drop-shadow-md">{demo.commentCount}</span>
                     </div>
                   </div>
 
@@ -241,6 +285,83 @@ export function DemoFeed({
         </div>
       ))}
       </div>
+      <AnimatePresence>
+        {isCommentsOpen && (
+          <>
+            <motion.button
+              type="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 z-[85] bg-black/60"
+              onClick={handleCloseComments}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute bottom-0 inset-x-0 z-[90] mx-auto w-full max-w-[640px] rounded-t-[24px] bg-[#111214] border-t border-white/10 shadow-[0_-30px_60px_rgba(0,0,0,0.65)] overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-4 pt-2.5 pb-3 border-b border-white/10">
+                <div className="flex flex-col">
+                  <span className="text-[13px] font-semibold text-white">{activeCommentsDemo.commentCount} comments</span>
+                  <span className="text-[10px] uppercase tracking-[0.18em] text-white/35">{activeCommentsDemo.title}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseComments}
+                  className="w-8 h-8 rounded-full bg-white/5 border border-white/10 text-white/75 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="max-h-[52vh] overflow-y-auto px-4 py-3 space-y-3">
+                {activeComments.map((comment) => (
+                  <div key={comment.id} className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-white/10 border border-white/10 text-white/85 flex items-center justify-center text-[11px] font-bold">
+                      {comment.name.slice(0, 1)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] text-white/90 font-semibold">{comment.name}</span>
+                        <span className="text-[10px] text-white/35">{comment.handle}</span>
+                      </div>
+                      <p className="text-[12px] text-white/75 leading-relaxed mt-0.5">{comment.text}</p>
+                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-white/35">
+                        <span>{comment.time}</span>
+                        <span>{comment.likes} likes</span>
+                        <button type="button" className="hover:text-white/70 transition-colors">Reply</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 py-3 border-t border-white/10 bg-[#0d0e10]">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-white/10 border border-white/10 text-white/85 flex items-center justify-center text-[11px] font-bold">
+                    Y
+                  </div>
+                  <input
+                    type="text"
+                    value=""
+                    readOnly
+                    placeholder="Add comment..."
+                    className="flex-1 h-9 px-3 rounded-full bg-white/6 border border-white/10 text-[12px] text-white/80 placeholder:text-white/35 outline-none"
+                  />
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-full bg-white text-black text-[11px] font-semibold hover:bg-white/90 transition-colors"
+                  >
+                    Post
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
