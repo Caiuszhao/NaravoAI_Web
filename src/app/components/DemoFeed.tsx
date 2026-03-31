@@ -217,7 +217,7 @@ export function DemoFeed({
           </div>
           
           {/* Centered Interaction element */}
-          <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none pb-44 sm:pb-36">
+          <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none pb-[11rem] sm:pb-[11.5rem] lg:pb-[12rem]">
             <div className={`transition-transform duration-300 ${isFullscreen ? 'translate-y-16' : 'translate-y-0'}`}>
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
