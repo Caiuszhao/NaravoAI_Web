@@ -337,7 +337,7 @@ export function DemoFeed({
                   viewport={{ amount: 0.8 }}
                   className="flex flex-col gap-1.5"
                 >
-                  <div className={`flex flex-col gap-1.5 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                  <div className={`flex flex-col gap-1.5 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-60'}`}>
                     <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                       {demo.title}
                     </h2>
