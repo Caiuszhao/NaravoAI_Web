@@ -1,7 +1,7 @@
 import logoImg from '../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png';
 import React from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Sparkles, Mail, CalendarDays } from 'lucide-react';
+import { Sparkles, Mail, CalendarDays } from 'lucide-react';
 
 export function ClosingCTASection() {
   return (
@@ -60,15 +60,21 @@ export function ClosingCTASection() {
           transition={{ delay: 0.4, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto"
         >
-          <div className="relative group w-full sm:w-auto">
+          <div className="relative group w-full sm:w-auto hidden">
             <div className="absolute -inset-1 bg-gradient-to-r from-white/30 via-white/10 to-white/30 rounded-xl blur-md opacity-30 group-hover:opacity-100 transition duration-700" />
-            <button className="relative flex items-center justify-center gap-3 w-full sm:w-auto sm:px-8 py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.15)] active:scale-[0.98] whitespace-nowrap">
+            <button
+              type="button"
+              className="relative flex items-center justify-center gap-3 w-full sm:w-auto sm:px-8 py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.15)] active:scale-[0.98] whitespace-nowrap"
+            >
               Partner with Naravo AI
-              <ArrowRight className="w-5 h-5" />
             </button>
           </div>
 
-          <button className="flex items-center gap-2 w-full sm:w-auto sm:px-6 py-4 rounded-xl bg-white/[0.04] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.08] hover:border-white/15 transition-all text-[14px] font-medium justify-center whitespace-nowrap">
+          <button
+            type="button"
+            onClick={() => window.open('https://calendar.app.google/mnWcEQ5AXaHFwrj99', '_blank', 'noopener,noreferrer')}
+            className="flex items-center gap-2 w-full sm:w-auto sm:px-6 py-4 rounded-xl bg-white/[0.04] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.08] hover:border-white/15 transition-all text-[14px] font-medium justify-center whitespace-nowrap"
+          >
             <CalendarDays className="w-4 h-4" />
             Schedule a Call
           </button>
