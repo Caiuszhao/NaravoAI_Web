@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HeroSection } from './components/HeroSection';
 import { DemoPreviewSection } from './components/DemoPreviewSection';
 import { WhyThisFeelsNewSection } from './components/WhyThisFeelsNewSection';
@@ -7,9 +7,26 @@ import { UserExperienceFlowSection } from './components/UserExperienceFlowSectio
 import { WhyItMattersSection } from './components/WhyItMattersSection';
 import { ClosingCTASection } from './components/ClosingCTASection';
 import { DemoPage } from './components/DemoPage';
+import { STORY1_VIDEOS } from './storyVideos';
+import { preloadVideosWithCache } from './utils/videoPreload';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
+
+  useEffect(() => {
+    if (currentPage !== 'home') return;
+    return preloadVideosWithCache({
+      // Priority: index1 > index2 > ep2 > ep3 > ep4
+      priority: [
+        STORY1_VIDEOS.intro,
+        STORY1_VIDEOS.loop,
+        STORY1_VIDEOS.branches.click,
+        STORY1_VIDEOS.branches.hold,
+        STORY1_VIDEOS.branches.rapid,
+      ],
+      background: [],
+    });
+  }, [currentPage]);
 
   if (currentPage === 'demo') {
     return <DemoPage onBackHome={() => setCurrentPage('home')} />;

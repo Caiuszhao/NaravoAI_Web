@@ -1,12 +1,74 @@
-import React, { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DemoFeed, DEMOS, CUSTOM_LOGO_URL } from './DemoFeed';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Fingerprint, Crosshair, Play } from 'lucide-react';
+import { LegacyDemoScreen } from './LegacyDemoScreen';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
+  const feedContainerRef = useRef<HTMLDivElement | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const scrollSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(min-width: 1024px)').matches;
+  });
 
   const activeDemo = DEMOS[activeDemoIdx];
+
+  const handleSelectDemo = (nextIndex: number) => {
+    const clampedIndex = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+    setActiveDemoIdx(clampedIndex);
+
+    const container = feedContainerRef.current;
+    if (!container) return;
+
+    const targetScrollTop = clampedIndex * container.clientHeight;
+    isProgrammaticScrollRef.current = true;
+    container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+    window.setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 420);
+  };
+
+  const handleFeedScroll = () => {
+    const container = feedContainerRef.current;
+    if (!container || isProgrammaticScrollRef.current) return;
+
+    if (scrollSyncTimerRef.current) clearTimeout(scrollSyncTimerRef.current);
+    scrollSyncTimerRef.current = setTimeout(() => {
+      const nextIndex = Math.round(container.scrollTop / container.clientHeight);
+      const clamped = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+      setActiveDemoIdx(clamped);
+    }, 70);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollSyncTimerRef.current) {
+        clearTimeout(scrollSyncTimerRef.current);
+      }
+    };
+  }, []);
+
+  const renderDemoScreen = (index: number) => {
+    if (index === 0) {
+      return <DemoFeed onBackHome={onBackHome} />;
+    }
+    return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} />;
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mediaQueryList = window.matchMedia('(min-width: 1024px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      setIsDesktopViewport(event.matches);
+    };
+
+    setIsDesktopViewport(mediaQueryList.matches);
+    mediaQueryList.addEventListener('change', handleViewportChange);
+    return () => mediaQueryList.removeEventListener('change', handleViewportChange);
+  }, []);
 
   return (
     <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-hidden flex flex-col">
@@ -14,14 +76,25 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
       {/* ========================================================= */}
       {/* MOBILE EXPERIENCE (Full Screen Vertical Feed) */}
       {/* ========================================================= */}
-      <div className="lg:hidden h-[100dvh] w-full relative">
-        <DemoFeed onBackHome={onBackHome} />
-      </div>
+      {!isDesktopViewport && (
+        <div
+          ref={feedContainerRef}
+          onScroll={handleFeedScroll}
+          className="h-[100dvh] w-full relative overflow-y-scroll snap-y snap-mandatory hide-scrollbar"
+        >
+          {DEMOS.map((demo, index) => (
+            <section key={demo.id} className="h-[100dvh] w-full snap-start shrink-0">
+              {renderDemoScreen(index)}
+            </section>
+          ))}
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* DESKTOP EXPERIENCE (Premium Presentation) */}
       {/* ========================================================= */}
-      <div className="hidden lg:flex flex-col min-h-[100dvh] relative overflow-y-auto">
+      {isDesktopViewport && (
+      <div className="flex flex-col min-h-[100dvh] relative overflow-y-auto">
         
         {/* Header */}
         <header className="w-full px-12 py-8 z-50 flex items-center justify-between border-b border-white/[0.06]">
@@ -84,7 +157,17 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
               
               {/* Feed Content */}
               <div className="w-full h-full relative rounded-[2.2rem] overflow-hidden">
-                <DemoFeed onIndexChange={setActiveDemoIdx} activeIndex={activeDemoIdx} onBackHome={onBackHome} />
+                <div
+                  ref={feedContainerRef}
+                  onScroll={handleFeedScroll}
+                  className="w-full h-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar"
+                >
+                  {DEMOS.map((demo, index) => (
+                    <section key={demo.id} className="h-full w-full snap-start shrink-0">
+                      {renderDemoScreen(index)}
+                    </section>
+                  ))}
+                </div>
               </div>
             </div>
             
@@ -155,7 +238,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
                 {DEMOS.map((d, i) => (
                   <button
                     key={d.id}
-                    onClick={() => setActiveDemoIdx(i)}
+                    onClick={() => handleSelectDemo(i)}
                     className={`flex items-center px-6 py-3 rounded-[1.5rem] transition-all duration-300 ${
                       i === activeDemoIdx 
                         ? 'bg-[#1a1a1a] border-[#333] text-white shadow-xl' 
@@ -195,6 +278,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
           </p>
         </footer>
       </div>
+      )}
     </div>
   );
 }
