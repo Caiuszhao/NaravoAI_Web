@@ -53,9 +53,9 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
   const renderDemoScreen = (index: number) => {
     if (index === 0) {
-      return <DemoFeed onBackHome={onBackHome} />;
+      return <DemoFeed onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
     }
-    return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} />;
+    return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
   };
 
   useEffect(() => {

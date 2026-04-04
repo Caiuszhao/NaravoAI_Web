@@ -49,11 +49,11 @@ const STORY_CONFIG = {
 
 const LEGACY_DEMO_2 = {
   id: 2,
-  title: 'Wasteland Run: Escape Partner',
-  feedHook: 'You and your partner race to a jammed shelter gate. Break the lock in 5 seconds before the horde catches you.',
-  showcaseHook: 'You and a dangerous ally are chased by a horde to a jammed shelter gate. Break the lock in 5 seconds, or get dragged in bleeding as the dead close in.',
-  interactionMethod: 'Rapid Tap (5s)',
-  objective: 'Smash open the shelter lock before the horde reaches you',
+  title: 'Machine Uprising: Core Lockdown',
+  feedHook: 'Coming Soon. A rogue service robot seals the evacuation elevator. Trigger a timed override before the control core wipes your access keys.',
+  showcaseHook: 'Coming Soon. Inside a collapsing arcology, a maintenance robot has turned hostile and locked the emergency lift. You must send the correct override pattern before the AI core purges civilian credentials.',
+  interactionMethod: 'Sequence Tap Override',
+  objective: 'Input the correct command pattern to unlock the elevator and contain the robot',
   commentCount: '3,778',
   mediaType: 'video' as const,
   videoBg: 'https://image-b2.civitai.com/file/civitai-media-cache/00f5df14-2645-4ca5-8d99-bde8b833c6f4/original',
@@ -62,8 +62,8 @@ const LEGACY_DEMO_2 = {
 const LEGACY_DEMO_3 = {
   id: 3,
   title: 'One Man Station',
-  feedHook: 'A lone astronaut gets one unstable relay burst. Your reply decides if he risks a final EVA repair or records a goodbye.',
-  showcaseHook: 'A lone astronaut drifting on a dying station restores one unstable relay burst. Your reply decides whether he risks one last EVA repair or records a final goodbye.',
+  feedHook: 'Coming Soon. A lone astronaut gets one unstable relay burst. Your reply decides if he risks a final EVA repair or records a goodbye.',
+  showcaseHook: 'Coming Soon. A lone astronaut drifting on a dying station restores one unstable relay burst. Your reply decides whether he risks one last EVA repair or records a final goodbye.',
   interactionMethod: 'Voice or Text Reply',
   objective: 'Send the message that shapes his final decision',
   commentCount: '2,154',
@@ -234,11 +234,13 @@ function getPlaybackSnapshot(phase: StoryPhase): StoryPlaybackSnapshot {
 export function DemoFeed({
   onBackHome,
   onStoryStateChange,
+  isActive = true,
 }: {
   onIndexChange?: (index: number) => void;
   activeIndex?: number;
   onBackHome?: () => void;
   onStoryStateChange?: (snapshot: StoryPlaybackSnapshot) => void;
+  isActive?: boolean;
 }) {
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
@@ -338,6 +340,12 @@ export function DemoFeed({
   useEffect(() => {
     const video = getActiveVideo();
     if (!video || !isIntroReady) return;
+    const activeSource = slotSources[activeVideoSlot];
+
+    // Never restart the outgoing clip while waiting for the next slot to become ready.
+    if (!activeSource || activeSource !== currentVideoSrc || pendingSwitchSlotRef.current !== null) {
+      return;
+    }
 
     if (window.navigator.userActivation?.hasBeenActive) {
       hasUserInteractedRef.current = true;
@@ -349,7 +357,28 @@ export function DemoFeed({
       video.muted = true;
       void video.play().catch(() => undefined);
     });
-  }, [activeVideoSlot, slotSources, isIntroReady]);
+  }, [activeVideoSlot, slotSources, isIntroReady, currentVideoSrc]);
+
+  useEffect(() => {
+    const videoA = videoARef.current;
+    const videoB = videoBRef.current;
+    if (!videoA || !videoB) return;
+
+    if (!isActive) {
+      videoA.pause();
+      videoB.pause();
+      return;
+    }
+
+    if (isPausedByUser || showBranchReplay || !isIntroReady) return;
+
+    const activeSource = slotSources[activeVideoSlot];
+    if (!activeSource || activeSource !== currentVideoSrc || pendingSwitchSlotRef.current !== null) return;
+
+    const activeVideo = getActiveVideo();
+    if (!activeVideo) return;
+    void activeVideo.play().catch(() => undefined);
+  }, [isActive, isPausedByUser, showBranchReplay, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
 
   useEffect(() => {
     const inactiveVideo = getVideoBySlot(getInactiveSlot());
@@ -793,27 +822,7 @@ export function DemoFeed({
     setStoryPhase('intro');
   };
 
-  const handleSlotLoadedData = (slot: 0 | 1) => {
-    // If we are preparing another slot, ignore loadeddata from non-target slots.
-    if (pendingSwitchSlotRef.current !== null && pendingSwitchSlotRef.current !== slot) {
-      return;
-    }
-
-    // Initial slot load (no pending switch): ensure audio state is applied immediately.
-    if (pendingSwitchSlotRef.current !== slot) {
-      if (slot !== activeVideoSlot) return;
-      const activeVideo = getVideoBySlot(slot);
-      if (!activeVideo) return;
-      if (window.navigator.userActivation?.hasBeenActive) {
-        hasUserInteractedRef.current = true;
-      }
-      activeVideo.muted = !hasUserInteractedRef.current;
-      activeVideo.volume = 1;
-      void activeVideo.play().catch(() => undefined);
-      setIsInitialFrameReady(true);
-      return;
-    }
-
+  const handleActivateIncomingSlot = (slot: 0 | 1) => {
     const incomingVideo = getVideoBySlot(slot);
     const outgoingVideo = getVideoBySlot(slot === 0 ? 1 : 0);
     if (!incomingVideo) return;
@@ -841,6 +850,59 @@ export function DemoFeed({
       setIsVideoTransitionMaskVisible(false);
     }, 120);
   };
+
+  const handleSlotLoadedData = (slot: 0 | 1) => {
+    // If we are preparing another slot, ignore loadeddata from non-target slots.
+    if (pendingSwitchSlotRef.current !== null && pendingSwitchSlotRef.current !== slot) {
+      return;
+    }
+
+    // Initial slot load (no pending switch): ensure audio state is applied immediately.
+    if (pendingSwitchSlotRef.current !== slot) {
+      if (slot !== activeVideoSlot) return;
+      const activeVideo = getVideoBySlot(slot);
+      if (!activeVideo) return;
+      if (window.navigator.userActivation?.hasBeenActive) {
+        hasUserInteractedRef.current = true;
+      }
+      activeVideo.muted = !hasUserInteractedRef.current;
+      activeVideo.volume = 1;
+      void activeVideo.play().catch(() => undefined);
+      setIsInitialFrameReady(true);
+      return;
+    }
+
+    handleActivateIncomingSlot(slot);
+  };
+
+  useEffect(() => {
+    const pendingSlot = pendingSwitchSlotRef.current;
+    if (pendingSlot === null) return;
+
+    let cancelled = false;
+    const tryActivatePendingSlot = () => {
+      if (cancelled) return;
+      if (pendingSwitchSlotRef.current !== pendingSlot) return;
+      const incomingVideo = getVideoBySlot(pendingSlot);
+      if (!incomingVideo) return;
+      if (incomingVideo.readyState >= 2) {
+        handleActivateIncomingSlot(pendingSlot);
+      }
+    };
+
+    const check0 = window.setTimeout(tryActivatePendingSlot, 0);
+    const check1 = window.setTimeout(tryActivatePendingSlot, 180);
+    const check2 = window.setTimeout(tryActivatePendingSlot, 500);
+    const check3 = window.setTimeout(tryActivatePendingSlot, 1100);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(check0);
+      window.clearTimeout(check1);
+      window.clearTimeout(check2);
+      window.clearTimeout(check3);
+    };
+  }, [currentVideoSrc, activeVideoSlot, slotSources]);
 
   useEffect(() => {
     storyPhaseRef.current = storyPhase;
