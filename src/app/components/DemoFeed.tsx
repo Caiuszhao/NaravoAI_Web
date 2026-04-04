@@ -164,6 +164,14 @@ function getBranchPhase(branch: BranchType): StoryPhase {
   return 'branch_rapid';
 }
 
+function getAssetKeyForPhase(phase: StoryPhase): VideoAssetKey {
+  if (phase === 'intro') return 'intro';
+  if (phase === 'loop') return 'loop';
+  if (phase === 'branch_click') return 'click';
+  if (phase === 'branch_hold') return 'hold';
+  return 'rapid';
+}
+
 function openVideoDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = window.indexedDB.open(VIDEO_DB_NAME, 1);
@@ -493,6 +501,13 @@ export function DemoFeed({
 
   useEffect(() => {
     let isCancelled = false;
+    const withWarmupTimeout = async (assetKey: VideoAssetKey, timeoutMs: number) => {
+      const directSource = VIDEO_ASSET_URLS[assetKey];
+      const timeoutPromise = new Promise<string>((resolve) => {
+        window.setTimeout(() => resolve(directSource), timeoutMs);
+      });
+      return Promise.race([resolveCachedVideo(assetKey), timeoutPromise]);
+    };
 
     const syncWarmupState = async () => {
       if (!SESSION_WARMUP_STARTED) {
@@ -517,13 +532,13 @@ export function DemoFeed({
         logVideoWarmup('session warmup reuse');
       }
 
-      const introSource = await resolveCachedVideo('intro');
+      const introSource = await withWarmupTimeout('intro', 12000);
       if (isCancelled) return;
 
       setResolvedVideoSources((previous) => ({ ...previous, intro: introSource }));
       setIsIntroReady(true);
 
-      const loopSource = await resolveCachedVideo('loop');
+      const loopSource = await withWarmupTimeout('loop', 10000);
       if (isCancelled) return;
 
       setResolvedVideoSources((previous) => ({ ...previous, loop: loopSource }));
@@ -583,9 +598,17 @@ export function DemoFeed({
           const cachedResponse = await cache.match(directSource);
 
           if (cachedResponse) {
-            logVideoWarmup(`${assetKey} cache hit`, '(Cache Storage)');
-            videoBlob = await cachedResponse.blob();
-            void writeIndexedDbVideo(directSource, videoBlob).catch(() => undefined);
+            const isPartial =
+              cachedResponse.status === 206 ||
+              Boolean(cachedResponse.headers.get('content-range'));
+            if (isPartial) {
+              logVideoWarmup(`${assetKey} cache stale partial`, '(delete + refetch)');
+              await cache.delete(directSource);
+            } else {
+              logVideoWarmup(`${assetKey} cache hit`, '(Cache Storage)');
+              videoBlob = await cachedResponse.blob();
+              void writeIndexedDbVideo(directSource, videoBlob).catch(() => undefined);
+            }
           } else {
             const indexedDbBlob = await readIndexedDbVideo(directSource).catch(() => null);
             if (indexedDbBlob) {
@@ -822,6 +845,26 @@ export function DemoFeed({
     setStoryPhase('intro');
   };
 
+  const handleVideoSlotError = (slot: 0 | 1) => {
+    const phase = storyPhaseRef.current;
+    const assetKey = getAssetKeyForPhase(phase);
+    const directSource = VIDEO_ASSET_URLS[assetKey];
+    const currentResolvedSource = resolvedVideoSourcesRef.current[assetKey];
+    if (currentResolvedSource === directSource) return;
+
+    // If a blob/object URL playback fails (e.g. bad range cache), force direct URL fallback.
+    SESSION_RESOLVED_SOURCES[assetKey] = directSource;
+    setResolvedVideoSources((previous) => ({
+      ...previous,
+      [assetKey]: directSource,
+    }));
+    setSlotSources((previous) => {
+      const next = [...previous] as [string | null, string | null];
+      next[slot] = directSource;
+      return next;
+    });
+  };
+
   const handleActivateIncomingSlot = (slot: 0 | 1) => {
     const incomingVideo = getVideoBySlot(slot);
     const outgoingVideo = getVideoBySlot(slot === 0 ? 1 : 0);
@@ -879,30 +922,68 @@ export function DemoFeed({
     const pendingSlot = pendingSwitchSlotRef.current;
     if (pendingSlot === null) return;
 
+    const incomingVideo = getVideoBySlot(pendingSlot);
+    if (!incomingVideo) return;
+
     let cancelled = false;
     const tryActivatePendingSlot = () => {
       if (cancelled) return;
       if (pendingSwitchSlotRef.current !== pendingSlot) return;
-      const incomingVideo = getVideoBySlot(pendingSlot);
-      if (!incomingVideo) return;
       if (incomingVideo.readyState >= 2) {
         handleActivateIncomingSlot(pendingSlot);
       }
     };
 
-    const check0 = window.setTimeout(tryActivatePendingSlot, 0);
-    const check1 = window.setTimeout(tryActivatePendingSlot, 180);
-    const check2 = window.setTimeout(tryActivatePendingSlot, 500);
-    const check3 = window.setTimeout(tryActivatePendingSlot, 1100);
+    const handleIncomingReady = () => {
+      tryActivatePendingSlot();
+    };
+
+    incomingVideo.addEventListener('loadeddata', handleIncomingReady);
+    incomingVideo.addEventListener('canplay', handleIncomingReady);
+    incomingVideo.addEventListener('canplaythrough', handleIncomingReady);
+
+    const pollTimer = window.setInterval(tryActivatePendingSlot, 200);
+    const timeoutTimer = window.setTimeout(() => {
+      tryActivatePendingSlot();
+      // Hard stop polling after fallback window.
+      window.clearInterval(pollTimer);
+    }, 10000);
+
+    // First immediate check for already-ready cases.
+    tryActivatePendingSlot();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(check0);
-      window.clearTimeout(check1);
-      window.clearTimeout(check2);
-      window.clearTimeout(check3);
+      incomingVideo.removeEventListener('loadeddata', handleIncomingReady);
+      incomingVideo.removeEventListener('canplay', handleIncomingReady);
+      incomingVideo.removeEventListener('canplaythrough', handleIncomingReady);
+      window.clearInterval(pollTimer);
+      window.clearTimeout(timeoutTimer);
     };
   }, [currentVideoSrc, activeVideoSlot, slotSources]);
+
+  useEffect(() => {
+    if (isInitialFrameReady || !isIntroReady) return;
+    const activeVideo = getActiveVideo();
+    if (!activeVideo) return;
+
+    const handleFrameReady = () => {
+      if (activeVideo.readyState >= 2) {
+        setIsInitialFrameReady(true);
+      }
+    };
+
+    handleFrameReady();
+    activeVideo.addEventListener('loadeddata', handleFrameReady);
+    activeVideo.addEventListener('canplay', handleFrameReady);
+
+    const fallbackTimer = window.setTimeout(handleFrameReady, 2500);
+    return () => {
+      activeVideo.removeEventListener('loadeddata', handleFrameReady);
+      activeVideo.removeEventListener('canplay', handleFrameReady);
+      window.clearTimeout(fallbackTimer);
+    };
+  }, [isInitialFrameReady, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
 
   useEffect(() => {
     storyPhaseRef.current = storyPhase;
@@ -1134,6 +1215,7 @@ export function DemoFeed({
                   if (activeVideoSlot === 0) handleVideoEnded();
                 }}
                 onLoadedData={() => handleSlotLoadedData(0)}
+                onError={() => handleVideoSlotError(0)}
               />
               <video
                 ref={videoBRef}
@@ -1148,6 +1230,7 @@ export function DemoFeed({
                   if (activeVideoSlot === 1) handleVideoEnded();
                 }}
                 onLoadedData={() => handleSlotLoadedData(1)}
+                onError={() => handleVideoSlotError(1)}
               />
             </>
           ) : (
@@ -1190,11 +1273,11 @@ export function DemoFeed({
 
         {isCountdownEnabled && (
           <div data-ui-layer="true" className="absolute top-[3.25rem] left-0 right-0 z-[68] px-4 sm:px-5 pointer-events-none">
-            <div className="w-full min-w-0 px-11 sm:px-12">
+            <div className="w-full min-w-0 px-14 sm:px-16 md:px-[4.25rem]">
               <div className="rounded-full border border-white/15 bg-black/45 backdrop-blur-xl px-3 py-2 flex items-center gap-2 min-w-0">
                 <Heart className="w-3.5 h-3.5 shrink-0" style={{ color: countdownColorSoft }} />
                 <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-[0.22em] sm:tracking-[0.25em] text-white/75 shrink-0">
-                  Door Breach
+                  Smash!
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="h-2 rounded-full bg-white/10 overflow-hidden w-full">

@@ -4,7 +4,7 @@ type PreloadPlan = {
 };
 
 // Must match `VIDEO_CACHE_NAME` in `DemoFeed.tsx` so home preload hits the same Cache Storage.
-const CACHE_NAME = 'naravo-story-video-v1';
+const CACHE_NAME = "naravo-story-video-v1";
 
 function shouldSkipPreload() {
   const connection = (navigator as any).connection as { saveData?: boolean; effectiveType?: string } | undefined;
@@ -13,8 +13,8 @@ function shouldSkipPreload() {
 }
 
 function createVideoWarmup(src: string) {
-  const video = document.createElement('video');
-  video.preload = 'auto';
+  const video = document.createElement("video");
+  video.preload = "auto";
   video.muted = true;
   video.playsInline = true;
   video.src = src;
@@ -40,30 +40,26 @@ async function cachePutUrl(cache: Cache, url: string, signal: AbortSignal) {
   if (await cacheHas(cache, url)) return;
 
   const response = await fetch(url, {
-    method: 'GET',
-    mode: 'cors',
-    credentials: 'omit',
-    cache: 'force-cache',
-    redirect: 'follow',
+    method: "GET",
+    mode: "cors",
+    credentials: "omit",
+    cache: "force-cache",
+    redirect: "follow",
     headers: {
-      'Content-Type': 'video/mp4',
+      "Content-Type": "video/mp4"
     },
-    signal,
+    signal
   });
 
   // Opaque responses (no-cors) can't be reliably validated; still allow caching if present.
-  if (!response.ok && response.type !== 'opaque') {
+  if (!response.ok && response.type !== "opaque") {
     throw new Error(`Failed to fetch ${url}: ${response.status}`);
   }
 
   await cache.put(url, response);
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>
-) {
+async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>) {
   const queue = items.slice();
   const running = new Set<Promise<void>>();
 
@@ -89,7 +85,7 @@ async function runWithConcurrency<T>(
 }
 
 export function preloadVideosWithCache(plan: PreloadPlan) {
-  if (typeof window === 'undefined') return () => undefined;
+  if (typeof window === "undefined") return () => undefined;
   if (shouldSkipPreload()) return () => undefined;
 
   const controller = new AbortController();
@@ -113,7 +109,7 @@ export function preloadVideosWithCache(plan: PreloadPlan) {
 
     // `loadeddata` is a good signal that the first media payload is available.
     // We don't block forever on remote servers.
-    return new Promise<void>((resolve) => {
+    return new Promise<void>(resolve => {
       const onLoaded = () => {
         cleanup();
         resolve();
@@ -123,11 +119,11 @@ export function preloadVideosWithCache(plan: PreloadPlan) {
         resolve(); // Don't block the pipeline on errors.
       };
       const cleanup = () => {
-        video.removeEventListener('loadeddata', onLoaded);
-        video.removeEventListener('error', onError);
+        video.removeEventListener("loadeddata", onLoaded);
+        video.removeEventListener("error", onError);
       };
-      video.addEventListener('loadeddata', onLoaded);
-      video.addEventListener('error', onError);
+      video.addEventListener("loadeddata", onLoaded);
+      video.addEventListener("error", onError);
 
       // Fallback timeout.
       window.setTimeout(() => {
@@ -143,13 +139,11 @@ export function preloadVideosWithCache(plan: PreloadPlan) {
   };
 
   const startCacheJobs = async (urls: string[]) => {
-    if (!('caches' in window)) return;
+    if (!("caches" in window)) return;
     await tryPersistStorage();
 
     const cache = await caches.open(CACHE_NAME);
-    await runWithConcurrency(urls, 2, (u) =>
-      cachePutUrl(cache, u, controller.signal).catch(() => undefined)
-    );
+    await runWithConcurrency(urls, 2, u => cachePutUrl(cache, u, controller.signal).catch(() => undefined));
   };
 
   void (async () => {
@@ -178,9 +172,8 @@ export function preloadVideosWithCache(plan: PreloadPlan) {
   return () => {
     controller.abort();
     for (const video of createdVideos) {
-      video.removeAttribute('src');
+      video.removeAttribute("src");
       video.load();
     }
   };
 }
-

@@ -14,6 +14,24 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
 
   useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+
+    if (currentPage === 'home') {
+      root.classList.add('hide-scrollbar');
+      body.classList.add('hide-scrollbar');
+    } else {
+      root.classList.remove('hide-scrollbar');
+      body.classList.remove('hide-scrollbar');
+    }
+
+    return () => {
+      root.classList.remove('hide-scrollbar');
+      body.classList.remove('hide-scrollbar');
+    };
+  }, [currentPage]);
+
+  useEffect(() => {
     if (currentPage !== 'home') return;
     return preloadVideosWithCache({
       // Priority: index1 > index2 > ep2 > ep3 > ep4
