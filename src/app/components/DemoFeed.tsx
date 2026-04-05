@@ -126,11 +126,11 @@ const VIDEO_CACHE_NAME = 'naravo-story-video-v1';
 const TAP_SPEED_WINDOW_MS = 1600;
 const LOOP_BASE_PLAYBACK_RATE = 0.8;
 const MIN_LOOP_PLAYBACK_RATE = 0.75;
-const MAX_LOOP_PLAYBACK_RATE = 5;
+const MAX_LOOP_PLAYBACK_RATE = 4;
 const TAPS_PER_SECOND_FOR_MAX_SPEED = 5.4;
 const TAP_BURST_RATE_BONUS = 0.18;
 const PLAYBACK_SMOOTHING = 0.24;
-const SPEED_GAIN_CURVE_EXPONENT = 2.25;
+const SPEED_GAIN_CURVE_EXPONENT = 2.5;
 const VIDEO_DB_NAME = 'naravo-story-video-db';
 const VIDEO_DB_STORE = 'video-blobs';
 
