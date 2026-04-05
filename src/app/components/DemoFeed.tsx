@@ -123,10 +123,14 @@ const LOOP_DECISION_WINDOW_MS = 10000;
 const TAP_TO_EP2_MIN = 20;
 const TAP_TO_EP3_MIN = 10; // 10-19 -> ep_3
 const VIDEO_CACHE_NAME = 'naravo-story-video-v1';
-const TAP_SPEED_WINDOW_MS = 900;
-const MIN_LOOP_PLAYBACK_RATE = 1;
-const MAX_LOOP_PLAYBACK_RATE = 2.4;
-const PLAYBACK_SMOOTHING = 0.14;
+const TAP_SPEED_WINDOW_MS = 1600;
+const LOOP_BASE_PLAYBACK_RATE = 0.8;
+const MIN_LOOP_PLAYBACK_RATE = 0.75;
+const MAX_LOOP_PLAYBACK_RATE = 5;
+const TAPS_PER_SECOND_FOR_MAX_SPEED = 5.4;
+const TAP_BURST_RATE_BONUS = 0.18;
+const PLAYBACK_SMOOTHING = 0.24;
+const SPEED_GAIN_CURVE_EXPONENT = 2.25;
 const VIDEO_DB_NAME = 'naravo-story-video-db';
 const VIDEO_DB_STORE = 'video-blobs';
 
@@ -142,6 +146,9 @@ const SESSION_PRELOAD_PROMISES: Partial<Record<VideoAssetKey, Promise<string>>> 
 const SESSION_RESOLVED_SOURCES: Record<VideoAssetKey, string> = { ...VIDEO_ASSET_URLS };
 let SESSION_WARMUP_STARTED = false;
 let SESSION_WARMUP_PROMISE: Promise<void> | null = null;
+const LOOP_SPEED_DEBUG_ENABLED =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.localStorage.getItem('naravo:loop-speed-debug') === '1');
 
 function logVideoWarmup(message: string, detail?: string) {
   const suffix = detail ? ` ${detail}` : '';
@@ -276,6 +283,19 @@ export function DemoFeed({
   );
   const objectUrlsRef = useRef<string[]>([]);
   const resolvedVideoSourcesRef = useRef<Record<VideoAssetKey, string>>(SESSION_RESOLVED_SOURCES);
+  const loopDurationSecondsRef = useRef<number | null>(null);
+  const loopEffectiveRateProbeRef = useRef<{
+    wallMs: number;
+    mediaSeconds: number;
+    lastLogMs: number;
+  } | null>(null);
+  const loopSpeedSessionRef = useRef<{
+    startedAtMs: number;
+    rateArea: number;
+    sampleCount: number;
+    tapCount: number;
+    lastSampleAtMs: number;
+  } | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -429,6 +449,7 @@ export function DemoFeed({
 
     if (!activeSource) {
       setSlotSources((previous) => {
+        if (previous[activeVideoSlot] === currentVideoSrc) return previous;
         const next = [...previous] as [string | null, string | null];
         next[activeVideoSlot] = currentVideoSrc;
         return next;
@@ -437,6 +458,7 @@ export function DemoFeed({
     }
 
     if (activeSource === currentVideoSrc) return;
+    if (pendingSwitchSlotRef.current === inactiveSlot && slotSources[inactiveSlot] === currentVideoSrc) return;
 
     pendingSwitchSlotRef.current = inactiveSlot;
     const outgoingVideo = getVideoBySlot(activeVideoSlot);
@@ -453,6 +475,7 @@ export function DemoFeed({
       videoTransitionMaskTimerRef.current = null;
     }, 900);
     setSlotSources((previous) => {
+      if (previous[inactiveSlot] === currentVideoSrc) return previous;
       const next = [...previous] as [string | null, string | null];
       next[inactiveSlot] = currentVideoSrc;
       return next;
@@ -567,6 +590,12 @@ export function DemoFeed({
   const resolveCachedVideo = async (assetKey: VideoAssetKey) => {
     const directSource = VIDEO_ASSET_URLS[assetKey];
 
+    // Branch clips may be blocked by CORS for JS fetch in some environments.
+    // Let <video> stream them directly to avoid fetch-preflight failures.
+    if (assetKey === 'click' || assetKey === 'hold' || assetKey === 'rapid') {
+      return directSource;
+    }
+
     if (resolvedVideoSourcesRef.current[assetKey] !== directSource) {
       logVideoWarmup(`${assetKey} source reuse`, '(session object URL)');
       return resolvedVideoSourcesRef.current[assetKey];
@@ -588,9 +617,6 @@ export function DemoFeed({
         const requestInit: RequestInit = {
           mode: 'cors',
           credentials: 'omit',
-          headers: {
-            'Content-Type': 'video/mp4',
-          },
         };
 
         if ('caches' in window && window.isSecureContext) {
@@ -741,6 +767,45 @@ export function DemoFeed({
     }
   };
 
+  const applyPlaybackRateToSlots = (rate: number) => {
+    const videoA = videoARef.current;
+    const videoB = videoBRef.current;
+    if (videoA) videoA.playbackRate = rate;
+    if (videoB) videoB.playbackRate = rate;
+  };
+
+  const finalizeLoopSpeedSession = (reason: 'branch-selected' | 'video-ended' | 'loop-cleanup') => {
+    const session = loopSpeedSessionRef.current;
+    if (!session) return;
+
+    const nowMs = performance.now();
+    const activeVideo = getActiveVideo();
+    if (activeVideo) {
+      const deltaSeconds = Math.max(0, (nowMs - session.lastSampleAtMs) / 1000);
+      session.rateArea += activeVideo.playbackRate * deltaSeconds;
+    }
+
+    const elapsedSeconds = Math.max(0.001, (nowMs - session.startedAtMs) / 1000);
+    const averageRate = session.rateArea > 0 ? session.rateArea / elapsedSeconds : 0;
+    const loopDurationAt1x = loopDurationSecondsRef.current;
+    const expectedAtAverageRate =
+      loopDurationAt1x && averageRate > 0 ? loopDurationAt1x / averageRate : null;
+
+    if (LOOP_SPEED_DEBUG_ENABLED) {
+      console.info('[loop-speed] summary', {
+        reason,
+        tapCount: session.tapCount,
+        elapsedSeconds: Number(elapsedSeconds.toFixed(2)),
+        averageRate: Number(averageRate.toFixed(3)),
+        loopDurationAt1x: loopDurationAt1x ? Number(loopDurationAt1x.toFixed(2)) : null,
+        expectedAtAverageRate: expectedAtAverageRate ? Number(expectedAtAverageRate.toFixed(2)) : null,
+        accelerationObserved: averageRate > 1.01,
+      });
+    }
+
+    loopSpeedSessionRef.current = null;
+  };
+
   const startPlaybackRateAnimation = () => {
     stopPlaybackRateAnimation();
 
@@ -752,7 +817,8 @@ export function DemoFeed({
       const nextRate = currentRate + (playbackRateTargetRef.current - currentRate) * PLAYBACK_SMOOTHING;
       const snappedRate = Math.abs(nextRate - playbackRateTargetRef.current) < 0.01 ? playbackRateTargetRef.current : nextRate;
 
-      video.playbackRate = snappedRate;
+      // Keep both slots in sync to avoid "hidden slot speeds up, visible slot stays normal".
+      applyPlaybackRateToSlots(snappedRate);
       if (Math.abs(snappedRate - playbackRateTargetRef.current) >= 0.01 || storyPhaseRef.current === 'loop') {
         playbackRateAnimationRef.current = requestAnimationFrame(tick);
       } else {
@@ -768,13 +834,21 @@ export function DemoFeed({
     tapTimestampsRef.current = tapTimestampsRef.current.filter((timestamp) => now - timestamp <= TAP_SPEED_WINDOW_MS);
 
     const tapsPerSecond = tapTimestampsRef.current.length / (TAP_SPEED_WINDOW_MS / 1000);
-    const normalizedSpeed = clamp(tapsPerSecond / 8, 0, 1);
-    playbackRateTargetRef.current = MIN_LOOP_PLAYBACK_RATE + (MAX_LOOP_PLAYBACK_RATE - MIN_LOOP_PLAYBACK_RATE) * normalizedSpeed;
+    const normalizedSpeed = clamp(tapsPerSecond / TAPS_PER_SECOND_FOR_MAX_SPEED, 0, 1);
+    const curvedSpeed = Math.pow(normalizedSpeed, SPEED_GAIN_CURVE_EXPONENT);
+    const baseRate = LOOP_BASE_PLAYBACK_RATE + (MAX_LOOP_PLAYBACK_RATE - LOOP_BASE_PLAYBACK_RATE) * curvedSpeed;
+    const burstBoost = tapTimestampsRef.current.length > 0 ? TAP_BURST_RATE_BONUS : 0;
+    playbackRateTargetRef.current = clamp(
+      Math.max(MIN_LOOP_PLAYBACK_RATE, baseRate + burstBoost),
+      MIN_LOOP_PLAYBACK_RATE,
+      MAX_LOOP_PLAYBACK_RATE
+    );
   };
 
   const enterBranch = async (branch: BranchType) => {
     if (storyPhase !== 'loop' || interactionLockedRef.current) return;
 
+    finalizeLoopSpeedSession('branch-selected');
     const requestId = ++branchTransitionRequestIdRef.current;
     setShowBranchReplay(false);
     interactionLockedRef.current = true;
@@ -794,6 +868,9 @@ export function DemoFeed({
 
   const handleVideoEnded = () => {
     const phase = storyPhaseRef.current;
+    if (phase === 'loop') {
+      finalizeLoopSpeedSession('video-ended');
+    }
     if (phase === 'intro') {
       interactionLockedRef.current = false;
       setStoryPhase('loop');
@@ -1000,14 +1077,27 @@ export function DemoFeed({
     loopClickCountRef.current = 0;
     tapTimestampsRef.current = [];
     setLoopWindowProgress(0);
-    playbackRateTargetRef.current = 1;
+    playbackRateTargetRef.current = LOOP_BASE_PLAYBACK_RATE;
 
     const video = getActiveVideo();
     if (video) {
-      video.playbackRate = 1;
+      applyPlaybackRateToSlots(LOOP_BASE_PLAYBACK_RATE);
     }
 
     startPlaybackRateAnimation();
+    loopSpeedSessionRef.current = {
+      startedAtMs: performance.now(),
+      rateArea: 0,
+      sampleCount: 0,
+      tapCount: 0,
+      lastSampleAtMs: performance.now(),
+    };
+    if (LOOP_SPEED_DEBUG_ENABLED) {
+      console.info('[loop-speed] session started', {
+        loopDurationAt1x: loopDurationSecondsRef.current ? Number(loopDurationSecondsRef.current.toFixed(2)) : null,
+        baseTargetRate: playbackRateTargetRef.current,
+      });
+    }
 
     const startedAt = Date.now();
 
@@ -1015,6 +1105,42 @@ export function DemoFeed({
       const progress = Math.min((Date.now() - startedAt) / LOOP_DECISION_WINDOW_MS, 1);
       setLoopWindowProgress(progress);
       updateLoopPlaybackRateTarget();
+      const session = loopSpeedSessionRef.current;
+      const activeVideo = getActiveVideo();
+      if (session && activeVideo) {
+        const nowMs = performance.now();
+        const deltaSeconds = Math.max(0, (nowMs - session.lastSampleAtMs) / 1000);
+        session.rateArea += activeVideo.playbackRate * deltaSeconds;
+        session.sampleCount += 1;
+        session.lastSampleAtMs = nowMs;
+
+        // Effective rate based on actual media time progression.
+        const probe = loopEffectiveRateProbeRef.current;
+        if (!probe) {
+          loopEffectiveRateProbeRef.current = {
+            wallMs: nowMs,
+            mediaSeconds: activeVideo.currentTime,
+            lastLogMs: nowMs,
+          };
+        } else {
+          const wallDelta = (nowMs - probe.wallMs) / 1000;
+          const mediaDelta = activeVideo.currentTime - probe.mediaSeconds;
+          if (wallDelta > 0.001) {
+            const effectiveRate = mediaDelta / wallDelta;
+            if (LOOP_SPEED_DEBUG_ENABLED && nowMs - probe.lastLogMs >= 650) {
+              console.info('[loop-speed] effective', {
+                effectiveRate: Number(effectiveRate.toFixed(3)),
+                visibleSlot: activeVideoSlot,
+                currentRate: Number(activeVideo.playbackRate.toFixed(3)),
+                currentTime: Number(activeVideo.currentTime.toFixed(3)),
+              });
+              probe.lastLogMs = nowMs;
+            }
+          }
+          probe.wallMs = nowMs;
+          probe.mediaSeconds = activeVideo.currentTime;
+        }
+      }
     }, 50);
 
     loopDecisionTimeoutRef.current = setTimeout(() => {
@@ -1035,9 +1161,11 @@ export function DemoFeed({
       playbackRateTargetRef.current = 1;
       const activeVideo = getActiveVideo();
       if (activeVideo) {
-        activeVideo.playbackRate = 1;
+        applyPlaybackRateToSlots(1);
       }
       stopPlaybackRateAnimation();
+      finalizeLoopSpeedSession('loop-cleanup');
+      loopEffectiveRateProbeRef.current = null;
     };
   }, [storyPhase]);
 
@@ -1082,8 +1210,30 @@ export function DemoFeed({
     setIsInteractionButtonPressed(true);
     hasUserInteractedRef.current = true;
     loopClickCountRef.current += 1;
+    if (loopSpeedSessionRef.current) {
+      loopSpeedSessionRef.current.tapCount += 1;
+    }
     tapTimestampsRef.current.push(Date.now());
     updateLoopPlaybackRateTarget();
+    if (LOOP_SPEED_DEBUG_ENABLED) {
+      const activeVideo = getActiveVideo();
+      console.info('[loop-speed] tap', {
+        tapCount: loopClickCountRef.current,
+        targetRate: Number(playbackRateTargetRef.current.toFixed(3)),
+        currentRate: activeVideo ? Number(activeVideo.playbackRate.toFixed(3)) : null,
+      });
+    }
+  };
+
+  const handleSlotLoadedMetadata = (slot: 0 | 1) => {
+    const video = getVideoBySlot(slot);
+    if (!video) return;
+    if (Math.abs(video.duration) > 0 && Number.isFinite(video.duration) && video.src === resolvedVideoSourcesRef.current.loop) {
+      loopDurationSecondsRef.current = video.duration;
+      if (LOOP_SPEED_DEBUG_ENABLED) {
+        console.info('[loop-speed] loop metadata', { duration: Number(video.duration.toFixed(2)) });
+      }
+    }
   };
 
   const handlePointerUp = () => {
@@ -1215,6 +1365,7 @@ export function DemoFeed({
                   if (activeVideoSlot === 0) handleVideoEnded();
                 }}
                 onLoadedData={() => handleSlotLoadedData(0)}
+                onLoadedMetadata={() => handleSlotLoadedMetadata(0)}
                 onError={() => handleVideoSlotError(0)}
               />
               <video
@@ -1230,6 +1381,7 @@ export function DemoFeed({
                   if (activeVideoSlot === 1) handleVideoEnded();
                 }}
                 onLoadedData={() => handleSlotLoadedData(1)}
+                onLoadedMetadata={() => handleSlotLoadedMetadata(1)}
                 onError={() => handleVideoSlotError(1)}
               />
             </>
