@@ -45,9 +45,6 @@ async function cachePutUrl(cache: Cache, url: string, signal: AbortSignal) {
     credentials: "omit",
     cache: "force-cache",
     redirect: "follow",
-    headers: {
-      "Content-Type": "video/mp4"
-    },
     signal
   });
 
