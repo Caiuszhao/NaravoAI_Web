@@ -9,6 +9,7 @@ import { ClosingCTASection } from './components/ClosingCTASection';
 import { DemoPage } from './components/DemoPage';
 import { STORY1_VIDEOS } from './storyVideos';
 import { preloadVideosWithCache } from './utils/videoPreload';
+import { GenerateApiTestDialog } from './components/GenerateApiTestDialog';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
@@ -61,6 +62,7 @@ export default function App() {
         <WhyItMattersSection />
         <ClosingCTASection />
       </main>
+      <GenerateApiTestDialog defaultOpen />
     </div>
   );
 }

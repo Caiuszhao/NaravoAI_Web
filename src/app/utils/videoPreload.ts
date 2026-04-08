@@ -45,12 +45,23 @@ async function cachePutUrl(cache: Cache, url: string, signal: AbortSignal) {
     credentials: "omit",
     cache: "force-cache",
     redirect: "follow",
+    headers: {
+      // Some CDNs/COS configs expect a content-type hint even on GET.
+      "Content-Type": "video/mp4",
+    },
     signal
   });
 
   // Opaque responses (no-cors) can't be reliably validated; still allow caching if present.
   if (!response.ok && response.type !== "opaque") {
     throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+
+  // Avoid writing partial/range responses to Cache Storage.
+  const isPartial =
+    response.status === 206 || Boolean(response.headers.get("content-range"));
+  if (isPartial) {
+    throw new Error(`Partial response (206) for ${url}`);
   }
 
   await cache.put(url, response);

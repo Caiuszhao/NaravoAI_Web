@@ -2,6 +2,37 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Heart, Maximize, MessageCircle, MoreHorizontal, Plus, X } from 'lucide-react';
 import { CUSTOM_LOGO_URL } from './DemoFeed';
+import { resolveCachedMediaUrl } from '../utils/mediaCache';
+import { generateText } from '../utils/generateClient';
+
+function extractEmotionType(payload: unknown): 1 | 2 | 3 | 4 | 5 | null {
+  const asAny = payload as any;
+  const direct = Number(asAny?.emotion_type);
+  if (Number.isFinite(direct) && direct >= 1 && direct <= 5) return direct as 1 | 2 | 3 | 4 | 5;
+
+  const raw = Number(asAny?.raw?.emotion_type);
+  if (Number.isFinite(raw) && raw >= 1 && raw <= 5) return raw as 1 | 2 | 3 | 4 | 5;
+
+  const outputText = asAny?.output_text;
+  if (typeof outputText === 'string') {
+    const trimmed = outputText.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const parsedEmotion = Number((parsed as any)?.emotion_type);
+        if (Number.isFinite(parsedEmotion) && parsedEmotion >= 1 && parsedEmotion <= 5) {
+          return parsedEmotion as 1 | 2 | 3 | 4 | 5;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const match = trimmed.match(/emotion_type\D*([1-5])/i);
+    if (match) return Number(match[1]) as 1 | 2 | 3 | 4 | 5;
+  }
+
+  return null;
+}
 
 type LegacyDemo = {
   id: number;
@@ -9,6 +40,10 @@ type LegacyDemo = {
   feedHook: string;
   commentCount: string;
   videoBg?: string;
+  videos?: readonly string[];
+  startIndex?: number; // 1-based, defaults to 1
+  bgmUrl?: string;
+  playVideoAudio?: boolean;
 };
 
 type LegacyComment = {
@@ -104,14 +139,86 @@ export function LegacyDemoScreen({
   onBackHome?: () => void;
   isActive?: boolean;
 }) {
+  const isDemo3 = demo.id === 3;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isCharactersOpen, setIsCharactersOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [activeVideoIndex, setActiveVideoIndex] = useState(() => {
+    const start = demo.startIndex ?? 1;
+    return Math.max(0, start - 1);
+  });
+
+  const playlist = demo.videos?.length ? demo.videos : demo.videoBg ? [demo.videoBg] : [];
+  const [resolvedMediaMap, setResolvedMediaMap] = useState<Record<string, string>>({});
+
+  const demo3UrlByFilename: Record<string, string> = {};
+  if (isDemo3) {
+    for (const url of playlist) {
+      const filename = url.split('/').pop();
+      if (filename) demo3UrlByFilename[filename] = url;
+    }
+  }
+  const getDemo3ClipUrl = (filename: string) =>
+    demo3UrlByFilename[filename] ??
+    // Allow underscore variant for ep_4_2 (actual file is `ep4_2.mp4`)
+    demo3UrlByFilename[filename.replace('ep_4_2.mp4', 'ep4_2.mp4')] ??
+    demo3UrlByFilename[filename.replace('ep4_2.mp4', 'ep_4_2.mp4')] ??
+    undefined;
+
+  const [demo3CurrentFilename, setDemo3CurrentFilename] = useState('index_1.mp4');
+  const [demo3Queue, setDemo3Queue] = useState<string[]>(['ep_2.mp4']);
+  const [demo3CountdownLeft, setDemo3CountdownLeft] = useState(10);
+  const [demo3InputValue, setDemo3InputValue] = useState('');
+  const demo3GenerateAbortRef = useRef<AbortController | null>(null);
+  const [isDemo3Generating, setIsDemo3Generating] = useState(false);
+  const [demo3PromptActive, setDemo3PromptActive] = useState(false);
+  const [demo3CountdownActive, setDemo3CountdownActive] = useState(false);
+  const [demo3HighEmotionHits, setDemo3HighEmotionHits] = useState(0); // count of emotion_type 4/5 hits (cap at 2)
+
+  const activeDirectSrc = isDemo3
+    ? getDemo3ClipUrl(demo3CurrentFilename)
+    : playlist[activeVideoIndex] ?? playlist[0] ?? undefined;
+  const activeSrc = activeDirectSrc ? (resolvedMediaMap[activeDirectSrc] ?? activeDirectSrc) : undefined;
 
   const comments = MOCK_COMMENTS_BY_DEMO[demo.id] ?? [];
   const characters = CHARACTERS_BY_DEMO[demo.id] ?? [];
+
+  useEffect(() => {
+    if (!isActive) return;
+    if (!isDemo3) return;
+    if (playlist.length === 0) return;
+
+    const controller = new AbortController();
+    const putResolved = (direct: string, resolved: string) => {
+      if (!direct || !resolved || direct === resolved) return;
+      setResolvedMediaMap((prev) => (prev[direct] === resolved ? prev : { ...prev, [direct]: resolved }));
+    };
+
+    void (async () => {
+      // Warm up BGM and next clip early so index_1 -> ep_2 is smooth.
+      if (demo.bgmUrl) {
+        const bgmResolved = await resolveCachedMediaUrl(demo.bgmUrl, {
+          kind: 'audio',
+          signal: controller.signal,
+        });
+        putResolved(demo.bgmUrl, bgmResolved);
+      }
+
+      const nextUrl = getDemo3ClipUrl('ep_2.mp4');
+      if (nextUrl) {
+        const nextResolved = await resolveCachedMediaUrl(nextUrl, {
+          kind: 'video',
+          signal: controller.signal,
+        });
+        putResolved(nextUrl, nextResolved);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [isActive, isDemo3, demo.bgmUrl, playlist]); // playlist change reflects new URLs
 
   useEffect(() => {
     const video = videoRef.current;
@@ -122,6 +229,274 @@ export function LegacyDemoScreen({
       video.pause();
     }
   }, [isActive]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const tryStart = () => {
+      if (!isActive) return;
+      // Keep BGM under the video's voice by default.
+      audio.volume = 0.25;
+      void audio.play().catch(() => undefined);
+    };
+
+    if (isActive) {
+      tryStart();
+    } else {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+
+    // Retry on first user interaction if autoplay is blocked.
+    const retry = () => tryStart();
+    document.addEventListener('pointerdown', retry, { capture: true });
+    document.addEventListener('keydown', retry, { capture: true });
+    return () => {
+      document.removeEventListener('pointerdown', retry, { capture: true } as any);
+      document.removeEventListener('keydown', retry, { capture: true } as any);
+    };
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    if (isDemo3) {
+      setDemo3CurrentFilename('index_1.mp4');
+      setDemo3Queue(['ep_2.mp4']);
+      setDemo3PromptActive(false);
+      setDemo3CountdownActive(false);
+      setDemo3CountdownLeft(10);
+      setDemo3HighEmotionHits(0);
+      return;
+    }
+    if (activeVideoIndex === 0) return;
+    setActiveVideoIndex(0);
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!demo3CountdownActive) {
+      setDemo3CountdownLeft(10);
+      return;
+    }
+    setDemo3CountdownLeft(10);
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const left = Math.max(0, 10 - elapsed);
+      setDemo3CountdownLeft(left);
+      if (left <= 0) {
+        window.clearInterval(timer);
+      }
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [isDemo3, demo3CountdownActive]);
+
+  // If prompt is shown and user doesn't input, treat as emotion_type=5.
+  // - With countdown: auto-submit when countdown reaches 0.
+  // - Without countdown: silently auto-submit after 10s if input remains empty.
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!isActive) return;
+    if (!demo3PromptActive) return;
+    if (isDemo3Generating) return;
+
+    if (demo3CountdownActive) {
+      if (demo3CountdownLeft > 0) return;
+      // Countdown ended => auto-submit (empty => emotion_type=5).
+      void submitDemo3Input();
+      return;
+    }
+
+    if (demo3InputValue.trim().length > 0) return;
+    const timer = window.setTimeout(() => {
+      void submitDemo3Input();
+    }, 10000);
+    return () => window.clearTimeout(timer);
+  }, [
+    isDemo3,
+    isActive,
+    demo3PromptActive,
+    demo3CountdownActive,
+    demo3CountdownLeft,
+    demo3InputValue,
+    isDemo3Generating,
+  ]);
+
+  // Prefetch next clip when current changes (Demo3 only).
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!isActive) return;
+    const nextFilename = demo3Queue[0];
+    if (!nextFilename) return;
+    const nextUrl = getDemo3ClipUrl(nextFilename);
+    if (!nextUrl) return;
+    const controller = new AbortController();
+    const putResolved = (direct: string, resolved: string) => {
+      if (!direct || !resolved || direct === resolved) return;
+      setResolvedMediaMap((prev) => (prev[direct] === resolved ? prev : { ...prev, [direct]: resolved }));
+    };
+    void (async () => {
+      const resolved = await resolveCachedMediaUrl(nextUrl, { kind: 'video', signal: controller.signal });
+      putResolved(nextUrl, resolved);
+    })();
+    return () => controller.abort();
+  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue]);
+
+  const demo3StartPrompt = (withCountdown: boolean) => {
+    setDemo3PromptActive(true);
+    setDemo3CountdownActive(withCountdown);
+    if (withCountdown) {
+      setDemo3CountdownLeft(10);
+    }
+  };
+
+  const demo3StopPrompt = () => {
+    setDemo3PromptActive(false);
+    setDemo3CountdownActive(false);
+    setDemo3CountdownLeft(10);
+  };
+
+  const demo3GoTo = (filename: string, queue: string[]) => {
+    setDemo3CurrentFilename(filename);
+    setDemo3Queue(queue);
+  };
+
+  const applyEmotionBranch = (emotionType: 1 | 2 | 3 | 4 | 5) => {
+    // Branching model as described by user.
+    if (emotionType === 5) {
+      // Retry mechanism: ep_4_1 -> ep_4_2(ep4_2) then prompt again.
+      demo3GoTo('ep_4_1.mp4', ['ep4_2.mp4']);
+      return;
+    }
+
+    if (emotionType === 4) {
+      // ep_4_3 -> ep_4_4 (prompt during ep_4_4)
+      demo3GoTo('ep_4_3.mp4', ['ep_4_4.mp4']);
+      return;
+    }
+
+    if (emotionType === 1) {
+      demo3GoTo('ep_3_1.mp4', ['ep_5.mp4']);
+      return;
+    }
+    if (emotionType === 2) {
+      demo3GoTo('ep_3_2.mp4', ['ep_5.mp4']);
+      return;
+    }
+    demo3GoTo('ep_3_3.mp4', ['ep_5.mp4']);
+  };
+
+  const applyEmotionAfterEp44 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
+    if (emotionType === 5) {
+      // Directly to ep_3_6
+      demo3GoTo('ep_3_6.mp4', ['ep_5.mp4']);
+      return;
+    }
+    if (emotionType === 4) {
+      // ep_3-4 then prompt again
+      demo3GoTo('ep_3-4.mp4', []);
+      return;
+    }
+    // Fallback: treat as end.
+    demo3GoTo('ep_5.mp4', []);
+  };
+
+  const applyEmotionAfterEp34 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
+    if (emotionType === 4) {
+      demo3GoTo('ep_3_5.mp4', ['ep_5.mp4']);
+      return;
+    }
+    if (emotionType === 5) {
+      demo3GoTo('ep_3_6.mp4', ['ep_5.mp4']);
+      return;
+    }
+    demo3GoTo('ep_5.mp4', []);
+  };
+
+  const submitDemo3Input = async () => {
+    if (!demo3PromptActive) return;
+
+    const rawText = demo3InputValue;
+    const trimmed = rawText.trim();
+    let emotionType: 1 | 2 | 3 | 4 | 5 = 5;
+
+    // Empty input => emotion_type=5 (retry).
+    if (trimmed) {
+      demo3GenerateAbortRef.current?.abort();
+      const controller = new AbortController();
+      demo3GenerateAbortRef.current = controller;
+      setIsDemo3Generating(true);
+      try {
+        const result = await generateText({ text: trimmed }, { signal: controller.signal });
+        emotionType = extractEmotionType(result) ?? 5;
+      } catch (error) {
+        console.warn('[demo3] generate failed', error);
+        emotionType = 5;
+      } finally {
+        if (demo3GenerateAbortRef.current === controller) {
+          demo3GenerateAbortRef.current = null;
+        }
+        setIsDemo3Generating(false);
+      }
+    }
+
+    const isHighEmotion = emotionType === 4 || emotionType === 5;
+    const nextHighHits = demo3HighEmotionHits + (isHighEmotion ? 1 : 0);
+    if (isHighEmotion) {
+      setDemo3HighEmotionHits(nextHighHits);
+      // If emotion_type is 4/5 (or combination) hits cap, go straight to result video.
+      if (nextHighHits >= 2) {
+        demo3StopPrompt();
+        demo3GoTo('ep_5.mp4', []);
+        return;
+      }
+    }
+
+    // Stop prompt UI before transitioning.
+    demo3StopPrompt();
+
+    // Decide which decision point we are at based on current clip.
+    if (demo3CurrentFilename === 'ep_2.mp4') {
+      applyEmotionBranch(emotionType);
+      return;
+    }
+    if (demo3CurrentFilename === 'ep_4_4.mp4') {
+      applyEmotionAfterEp44(emotionType);
+      return;
+    }
+    if (demo3CurrentFilename === 'ep_3-4.mp4') {
+      applyEmotionAfterEp34(emotionType);
+      return;
+    }
+
+    // If prompt came from post-ep4_2 retry point, treat as initial decision.
+    applyEmotionBranch(emotionType);
+  };
+
+  // When Demo3 enters specific clips, activate prompts/countdown as required.
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!isActive) return;
+
+    if (demo3CurrentFilename === 'ep_2.mp4') {
+      demo3StartPrompt(true);
+      return;
+    }
+
+    if (demo3CurrentFilename === 'ep_4_4.mp4') {
+      demo3StartPrompt(false);
+      return;
+    }
+
+    if (demo3CurrentFilename === 'ep_3-4.mp4') {
+      demo3StartPrompt(false);
+      return;
+    }
+
+    // Otherwise no prompt unless explicitly triggered (e.g. after ep4_2 ends).
+    demo3StopPrompt();
+  }, [isDemo3, isActive, demo3CurrentFilename]);
 
   return (
     <div className="w-full h-full relative overflow-hidden">
@@ -143,19 +518,88 @@ export function LegacyDemoScreen({
       </div>
 
       <div className="absolute inset-0 z-0 bg-black">
+        {demo.bgmUrl && (
+          <audio
+            ref={audioRef}
+            src={resolvedMediaMap[demo.bgmUrl] ?? demo.bgmUrl}
+            autoPlay={isActive}
+            loop
+            preload="auto"
+          />
+        )}
         <video
           ref={videoRef}
-          src={demo.videoBg}
+          src={activeSrc}
           className="w-full h-full object-cover opacity-85"
-          autoPlay
-          loop
-          muted
+          autoPlay={isActive}
+          loop={!isDemo3 && playlist.length <= 1}
+          muted={!demo.playVideoAudio}
           playsInline
           preload="auto"
+          onEnded={() => {
+            if (isDemo3) {
+              // Demo3 is driven by a queue/state machine.
+              if (demo3CurrentFilename === 'ep4_2.mp4') {
+                // After ep_4_2 playback, prompt again (retry input point).
+                demo3StartPrompt(false);
+                return;
+              }
+
+              const next = demo3Queue[0];
+              if (next) {
+                setDemo3CurrentFilename(next);
+                setDemo3Queue((prev) => prev.slice(1));
+                return;
+              }
+              return;
+            }
+
+            if (playlist.length <= 1) return;
+            setActiveVideoIndex((previous) => {
+              const next = previous + 1;
+              return next >= playlist.length ? 0 : next;
+            });
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_10%,rgba(0,0,0,0.55)_100%)]" />
       </div>
+
+      {isDemo3 && demo3CountdownActive && (
+        <>
+          {/* Top 10s countdown overlay (Demo 3, ep_2 only) */}
+          <div className="absolute top-[3.25rem] left-0 right-0 z-[69] px-4 pointer-events-none">
+            <div className="mx-auto w-fit rounded-full border border-white/15 bg-black/45 backdrop-blur-xl px-4 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/80 tabular-nums">
+                {demo3CountdownLeft}s
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isDemo3 && demo3PromptActive && (
+        <>
+          {/* Bottom text input overlay */}
+          <div className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-5 pointer-events-auto">
+            <div className="mx-auto w-full max-w-[560px] rounded-[18px] border border-white/10 bg-black/55 backdrop-blur-xl p-3 shadow-[0_-20px_45px_rgba(0,0,0,0.45)]">
+              <input
+                type="text"
+                value={demo3InputValue}
+                onChange={(e) => setDemo3InputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  if (e.shiftKey) return;
+                  e.preventDefault();
+                  if (!isDemo3Generating) void submitDemo3Input();
+                }}
+                placeholder="Type your reply..."
+                className="w-full h-11 px-4 rounded-[14px] bg-white/6 border border-white/10 text-[13px] text-white/85 placeholder:text-white/35 outline-none"
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="absolute inset-0 flex flex-col justify-end z-10">
         <div className="relative z-10 p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">

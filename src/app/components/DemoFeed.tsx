@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, MoreHorizontal, MousePointerClick, Heart, MessageCircle, Plus, Maximize, RotateCcw, Share2, Wand2, X, Play } from 'lucide-react';
-import { STORY1_VIDEOS } from '../storyVideos';
+import { STORY1_VIDEOS, DEMO3_VIDEOS } from '../storyVideos';
 
 const CUSTOM_LOGO_URL = new URL('../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png', import.meta.url).href;
 const DEMO1_COVER_URL = new URL('../../assets/Demo1-cover.jpg', import.meta.url).href;
@@ -68,7 +68,10 @@ const LEGACY_DEMO_3 = {
   objective: 'Send the message that shapes his final decision',
   commentCount: '2,154',
   mediaType: 'video' as const,
-  videoBg: 'https://image-b2.civitai.com/file/civitai-media-cache/535584e2-0805-4b3b-96a8-fe0eb24a2205/original',
+  videoBg: DEMO3_VIDEOS[0],
+  videos: DEMO3_VIDEOS,
+  bgmUrl: 'https://playable-1257281110.cos.ap-guangzhou.myqcloud.com/story_last_day/demo2/demo2_bgm.mp3',
+  playVideoAudio: true,
 };
 
 export const DEMOS = [STORY_CONFIG, LEGACY_DEMO_2, LEGACY_DEMO_3];
@@ -250,12 +253,14 @@ export function DemoFeed({
   onBackHome,
   onStoryStateChange,
   isActive = true,
+  shouldAutoStart = true,
 }: {
   onIndexChange?: (index: number) => void;
   activeIndex?: number;
   onBackHome?: () => void;
   onStoryStateChange?: (snapshot: StoryPlaybackSnapshot) => void;
   isActive?: boolean;
+  shouldAutoStart?: boolean;
 }) {
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
@@ -348,6 +353,7 @@ export function DemoFeed({
           : storyPhase === 'branch_hold'
             ? resolvedVideoSources.hold
             : resolvedVideoSources.rapid;
+  const allowPlayback = isActive && shouldAutoStart;
 
   const getVideoBySlot = (slot: 0 | 1) => (slot === 0 ? videoARef.current : videoBRef.current);
   const getActiveVideo = () => getVideoBySlot(activeVideoSlot);
@@ -379,20 +385,25 @@ export function DemoFeed({
       hasUserInteractedRef.current = true;
     }
 
+    if (!allowPlayback) {
+      video.pause();
+      return;
+    }
+
     video.muted = !hasUserInteractedRef.current;
     video.volume = 1;
     void video.play().catch(() => {
       video.muted = true;
       void video.play().catch(() => undefined);
     });
-  }, [activeVideoSlot, slotSources, isIntroReady, currentVideoSrc]);
+  }, [allowPlayback, activeVideoSlot, slotSources, isIntroReady, currentVideoSrc]);
 
   useEffect(() => {
     const videoA = videoARef.current;
     const videoB = videoBRef.current;
     if (!videoA || !videoB) return;
 
-    if (!isActive) {
+    if (!allowPlayback) {
       videoA.pause();
       videoB.pause();
       return;
@@ -406,7 +417,7 @@ export function DemoFeed({
     const activeVideo = getActiveVideo();
     if (!activeVideo) return;
     void activeVideo.play().catch(() => undefined);
-  }, [isActive, isPausedByUser, showBranchReplay, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
+  }, [allowPlayback, isPausedByUser, showBranchReplay, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
 
   useEffect(() => {
     const inactiveVideo = getVideoBySlot(getInactiveSlot());

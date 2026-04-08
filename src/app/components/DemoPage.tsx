@@ -6,6 +6,7 @@ import { LegacyDemoScreen } from './LegacyDemoScreen';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
+  const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(false);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const isProgrammaticScrollRef = useRef(false);
   const scrollSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -18,6 +19,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
   const handleSelectDemo = (nextIndex: number) => {
     const clampedIndex = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+    setHasActivatedDemoPlayback(true);
     setActiveDemoIdx(clampedIndex);
 
     const container = feedContainerRef.current;
@@ -39,6 +41,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
     scrollSyncTimerRef.current = setTimeout(() => {
       const nextIndex = Math.round(container.scrollTop / container.clientHeight);
       const clamped = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+      if (clamped !== activeDemoIdx) setHasActivatedDemoPlayback(true);
       setActiveDemoIdx(clamped);
     }, 70);
   };
@@ -53,7 +56,13 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
   const renderDemoScreen = (index: number) => {
     if (index === 0) {
-      return <DemoFeed onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
+      return (
+        <DemoFeed
+          onBackHome={onBackHome}
+          isActive={activeDemoIdx === index}
+          shouldAutoStart={hasActivatedDemoPlayback}
+        />
+      );
     }
     return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
   };
