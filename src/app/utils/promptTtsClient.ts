@@ -19,6 +19,9 @@ export type TtsApiRequest = {
 
 export type PromptTtsApiRequest = {
   prompt: string;
+  /** 填则走复刻 clone/tts；与 `media_type` 等一并传给网关 */
+  voice_id?: number;
+  media_type?: string;
   per?: number;
   spd?: number;
   pit?: number;

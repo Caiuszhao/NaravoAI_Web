@@ -7,6 +7,7 @@ import {
   postPromptTts,
   postTts,
 } from '../utils/promptTtsClient';
+import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
 import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
 import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
 import { useDemoDebug } from '../context/DemoDebugContext';
@@ -190,10 +191,18 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
   const runPromptTts = async () => {
     const payload = buildPromptTtsFullPrompt(promptTtsPrompt);
 
-    const body = { prompt: payload, per, spd, pit, vol };
+    const body = {
+      prompt: payload,
+      voice_id: PROMPT_TTS_CLONE_VOICE_ID,
+      media_type: PROMPT_TTS_CLONE_MEDIA_TYPE,
+      per,
+      spd,
+      pit,
+      vol,
+    };
     pushDebug({
       kind: 'api_request',
-      title: 'POST /api/v1/prompt-tts (test dialog)',
+      title: 'POST /api/v1/prompt-tts (test dialog · clone)',
       body: safeJson(body),
     });
     abortRef.current?.abort();
@@ -206,7 +215,7 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
       setNextAudioBlob(blob);
       pushDebug({
         kind: 'api_response',
-        title: 'prompt-tts OK (test dialog)',
+        title: 'prompt-tts OK (test dialog · clone)',
         body: `audio/mpeg blob: ${blob.size} bytes`,
       });
     } catch (e) {

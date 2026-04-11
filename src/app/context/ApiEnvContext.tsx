@@ -7,9 +7,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { appRuntimeConfig } from '../config/app.config';
 import { DEFAULT_GENERATE_API_BASE_URL, LOCAL_GENERATE_API_BASE_URL } from '../utils/generateClient';
 
-const STORAGE_KEY = 'naravo_api_env';
+/** v2：与旧 key 脱钩，便于默认切到线上后仍可用「测」持久化本机环境。 */
+const STORAGE_KEY = 'naravo_api_env_v2';
 
 export type ApiEnvMode = 'test' | 'production';
 
@@ -22,12 +24,14 @@ type ApiEnvContextValue = {
 const ApiEnvContext = createContext<ApiEnvContextValue | null>(null);
 
 function readStoredMode(): ApiEnvMode {
-  if (typeof window === 'undefined') return 'production';
+  const fallback = appRuntimeConfig.defaultApiEnvironment;
+  if (typeof window === 'undefined') return fallback;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw === 'test' ? 'test' : 'production';
+    if (raw === 'test' || raw === 'production') return raw;
+    return fallback;
   } catch {
-    return 'production';
+    return fallback;
   }
 }
 
@@ -56,10 +60,11 @@ export function ApiEnvProvider({ children }: { children: ReactNode }) {
 export function useApiEnv() {
   const ctx = useContext(ApiEnvContext);
   if (!ctx) {
+    const mode = appRuntimeConfig.defaultApiEnvironment;
     return {
-      mode: 'production' as ApiEnvMode,
+      mode,
       setMode: () => {},
-      baseUrl: DEFAULT_GENERATE_API_BASE_URL,
+      baseUrl: mode === 'test' ? LOCAL_GENERATE_API_BASE_URL : DEFAULT_GENERATE_API_BASE_URL,
     };
   }
   return ctx;

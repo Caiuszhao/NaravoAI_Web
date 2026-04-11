@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Heart, Maximize, MessageCircle, MoreHorizontal, Plus, RotateCcw, X } from 'lucide-react';
 import { CUSTOM_LOGO_URL } from './DemoFeed';
 import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
 import { getDemo3PrefetchFilenames } from '../utils/demo3Prefetch';
 import { generateText } from '../utils/generateClient';
-import { createMp3ObjectUrl, postPrompt, postTts } from '../utils/promptTtsClient';
+import { createMp3ObjectUrl, postPrompt, postPromptTts } from '../utils/promptTtsClient';
 import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
+import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
 import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
 import { useDemoDebug } from '../context/DemoDebugContext';
 import { useApiEnv } from '../context/ApiEnvContext';
@@ -367,6 +368,12 @@ export function LegacyDemoScreen({
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
+      const narEl = demo3NarrationAudioRef.current;
+      if (narEl) {
+        narEl.pause();
+        narEl.removeAttribute('src');
+        void narEl.load();
+      }
       return;
     }
     if (activeVideoIndex === 0) return;
@@ -622,6 +629,14 @@ export function LegacyDemoScreen({
   const applyDemo3EmotionAtCurrentClipRef = useRef(applyDemo3EmotionAtCurrentClip);
   applyDemo3EmotionAtCurrentClipRef.current = applyDemo3EmotionAtCurrentClip;
 
+  const flushDemo3NarrationAudioElement = useCallback(() => {
+    const el = demo3NarrationAudioRef.current;
+    if (!el) return;
+    el.pause();
+    el.removeAttribute('src');
+    void el.load();
+  }, []);
+
   const handleDemo3ReplayFromStart = () => {
     demo3GenerateAbortRef.current?.abort();
     demo3GenerateAbortRef.current = null;
@@ -643,6 +658,7 @@ export function LegacyDemoScreen({
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
+    flushDemo3NarrationAudioElement();
     setDemo3IsLoading(true);
 
     const token = ++demo3ReplayTokenRef.current;
@@ -858,15 +874,24 @@ export function LegacyDemoScreen({
           body: text,
         });
 
+        const cloneBody = {
+          prompt,
+          voice_id: PROMPT_TTS_CLONE_VOICE_ID,
+          media_type: PROMPT_TTS_CLONE_MEDIA_TYPE,
+          per: 0,
+          spd: 5,
+          pit: 5,
+          vol: 5,
+        };
         pushDebug({
           kind: 'api_request',
-          title: 'POST /api/v1/tts (Demo3 ep_5 narration)',
-          body: safeJson({ text }),
+          title: 'POST /api/v1/prompt-tts (Demo3 ep_5 narration · clone)',
+          body: safeJson(cloneBody),
         });
-        const blob = await postTts(
-          { text, per: 0, spd: 5, pit: 5, vol: 5 },
-          { baseUrl: generateApiBaseUrl, signal: controller.signal }
-        );
+        const blob = await postPromptTts(cloneBody, {
+          baseUrl: generateApiBaseUrl,
+          signal: controller.signal,
+        });
         const url = createMp3ObjectUrl(blob);
         setDemo3NarrationAudioUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
@@ -874,7 +899,7 @@ export function LegacyDemoScreen({
         });
         pushDebug({
           kind: 'api_response',
-          title: 'TTS OK (Demo3 ep_5 narration)',
+          title: 'prompt-tts OK (Demo3 ep_5 narration · clone)',
           body: `audio/mpeg blob: ${blob.size} bytes`,
         });
       } catch (e) {
@@ -925,11 +950,13 @@ export function LegacyDemoScreen({
     demo3StopPrompt();
   }, [isDemo3, isActive, demo3CurrentFilename]);
 
-  // Demo3 ep_last: play narration audio on top.
+  // Demo3 ep_last: play narration audio on top（Replay 遮罩 / 无 URL 不 play，避免 Retry 前后重播缓存 TTS）。
   useEffect(() => {
     if (!isDemo3) return;
     if (!isActive) return;
+    if (demo3ShowReplay) return;
     if (demo3CurrentFilename !== 'ep_last.mp4') return;
+    if (!demo3NarrationAudioUrl) return;
     const a = demo3NarrationAudioRef.current;
     if (!a) return;
     a.currentTime = 0;
@@ -937,7 +964,7 @@ export function LegacyDemoScreen({
     return () => {
       a.pause();
     };
-  }, [isDemo3, isActive, demo3CurrentFilename, demo3NarrationAudioUrl]);
+  }, [isDemo3, isActive, demo3ShowReplay, demo3CurrentFilename, demo3NarrationAudioUrl]);
 
   useEffect(() => {
     if (!isDemo3 || !demo3ShowReplay) return;

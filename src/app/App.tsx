@@ -11,6 +11,7 @@ import { STORY1_VIDEOS } from './storyVideos';
 import { preloadVideosWithCache } from './utils/videoPreload';
 import { GenerateApiTestDialog } from './components/GenerateApiTestDialog';
 import { DemoDebugPanel } from './components/DemoDebugPanel';
+import { appRuntimeConfig } from './config/app.config';
 import { DemoDebugProvider } from './context/DemoDebugContext';
 import { ApiEnvProvider } from './context/ApiEnvContext';
 
@@ -66,10 +67,10 @@ export default function App() {
               <WhyItMattersSection />
               <ClosingCTASection />
             </main>
-            <GenerateApiTestDialog defaultOpen />
+            {appRuntimeConfig.enableDebugPanel && <GenerateApiTestDialog defaultOpen />}
           </div>
         )}
-        <DemoDebugPanel />
+        {appRuntimeConfig.enableDebugPanel && <DemoDebugPanel />}
       </ApiEnvProvider>
     </DemoDebugProvider>
   );
