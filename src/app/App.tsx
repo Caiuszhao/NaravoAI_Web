@@ -10,6 +10,9 @@ import { DemoPage } from './components/DemoPage';
 import { STORY1_VIDEOS } from './storyVideos';
 import { preloadVideosWithCache } from './utils/videoPreload';
 import { GenerateApiTestDialog } from './components/GenerateApiTestDialog';
+import { DemoDebugPanel } from './components/DemoDebugPanel';
+import { DemoDebugProvider } from './context/DemoDebugContext';
+import { ApiEnvProvider } from './context/ApiEnvContext';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
@@ -47,22 +50,27 @@ export default function App() {
     });
   }, [currentPage]);
 
-  if (currentPage === 'demo') {
-    return <DemoPage onBackHome={() => setCurrentPage('home')} />;
-  }
-
   return (
-    <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-x-hidden">
-      <main className="w-full min-h-[100dvh] relative">
-        <HeroSection onTryLiveDemo={() => setCurrentPage('demo')} />
-        <DemoPreviewSection />
-        <WhyThisFeelsNewSection />
-        <ProductThesisSection />
-        <UserExperienceFlowSection />
-        <WhyItMattersSection />
-        <ClosingCTASection />
-      </main>
-      <GenerateApiTestDialog defaultOpen />
-    </div>
+    <DemoDebugProvider>
+      <ApiEnvProvider>
+        {currentPage === 'demo' ? (
+          <DemoPage onBackHome={() => setCurrentPage('home')} />
+        ) : (
+          <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-x-hidden">
+            <main className="w-full min-h-[100dvh] relative">
+              <HeroSection onTryLiveDemo={() => setCurrentPage('demo')} />
+              <DemoPreviewSection />
+              <WhyThisFeelsNewSection />
+              <ProductThesisSection />
+              <UserExperienceFlowSection />
+              <WhyItMattersSection />
+              <ClosingCTASection />
+            </main>
+            <GenerateApiTestDialog defaultOpen />
+          </div>
+        )}
+        <DemoDebugPanel />
+      </ApiEnvProvider>
+    </DemoDebugProvider>
   );
 }

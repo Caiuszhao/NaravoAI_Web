@@ -122,3 +122,43 @@ export async function resolveCachedMediaUrl(
   }
 }
 
+/** Warm decoder / buffer for a URL so swapping a visible <video src> is less likely to black-frame. */
+export function warmupVideoUrl(
+  src: string,
+  { timeoutMs = 14000, signal }: { timeoutMs?: number; signal?: AbortSignal } = {}
+): Promise<void> {
+  if (typeof window === 'undefined' || !src) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    v.preload = 'auto';
+    v.muted = true;
+    v.playsInline = true;
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      v.removeEventListener('canplaythrough', onReady);
+      v.removeEventListener('loadeddata', onReady);
+      v.removeEventListener('error', onReady);
+      window.clearTimeout(tid);
+      signal?.removeEventListener('abort', onAbort);
+      v.removeAttribute('src');
+      v.load();
+      resolve();
+    };
+
+    const onReady = () => finish();
+    const onAbort = () => finish();
+
+    v.addEventListener('canplaythrough', onReady);
+    v.addEventListener('loadeddata', onReady);
+    v.addEventListener('error', onReady);
+    const tid = window.setTimeout(finish, timeoutMs);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    v.src = src;
+    v.load();
+  });
+}
+

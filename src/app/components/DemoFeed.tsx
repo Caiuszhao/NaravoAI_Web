@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, MoreHorizontal, MousePointerClick, Heart, MessageCircle, Plus, Maximize, RotateCcw, Share2, Wand2, X, Play } from 'lucide-react';
 import { STORY1_VIDEOS, DEMO3_VIDEOS } from '../storyVideos';
+import { useDemoDebug } from '../context/DemoDebugContext';
 
 const CUSTOM_LOGO_URL = new URL('../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png', import.meta.url).href;
 const DEMO1_COVER_URL = new URL('../../assets/Demo1-cover.jpg', import.meta.url).href;
@@ -15,6 +16,14 @@ const STORY_RAPID_VIDEO = STORY1_VIDEOS.branches.rapid;
 type StoryPhase = 'intro' | 'loop' | 'branch_click' | 'branch_hold' | 'branch_rapid';
 type BranchType = 'click' | 'hold' | 'rapid';
 type VideoAssetKey = 'intro' | 'loop' | 'click' | 'hold' | 'rapid';
+
+const DEMO1_PHASE_TO_FILE: Record<StoryPhase, string> = {
+  intro: 'index_1.mp4',
+  loop: 'index_2.mp4',
+  branch_click: 'ep_2.mp4',
+  branch_hold: 'ep_3.mp4',
+  branch_rapid: 'ep_4.mp4',
+};
 
 export type StoryPlaybackSnapshot = {
   phase: StoryPhase;
@@ -354,6 +363,26 @@ export function DemoFeed({
             ? resolvedVideoSources.hold
             : resolvedVideoSources.rapid;
   const allowPlayback = isActive && shouldAutoStart;
+  const isActiveRef = useRef(isActive);
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  const { push: pushDebug } = useDemoDebug();
+  const prevStoryPhaseDebugRef = useRef<StoryPhase | null>(null);
+  useEffect(() => {
+    if (!isActive) {
+      prevStoryPhaseDebugRef.current = null;
+      return;
+    }
+    if (prevStoryPhaseDebugRef.current === storyPhase) return;
+    prevStoryPhaseDebugRef.current = storyPhase;
+    pushDebug({
+      kind: 'video_branch',
+      title: 'Demo1 · branch clip',
+      body: `phase: ${storyPhase}\nlogical file: ${DEMO1_PHASE_TO_FILE[storyPhase]}`,
+    });
+  }, [isActive, storyPhase, pushDebug]);
 
   const getVideoBySlot = (slot: 0 | 1) => (slot === 0 ? videoARef.current : videoBRef.current);
   const getActiveVideo = () => getVideoBySlot(activeVideoSlot);
@@ -418,6 +447,20 @@ export function DemoFeed({
     if (!activeVideo) return;
     void activeVideo.play().catch(() => undefined);
   }, [allowPlayback, isPausedByUser, showBranchReplay, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
+
+  useEffect(() => {
+    if (isActive) return;
+    const videoA = videoARef.current;
+    const videoB = videoBRef.current;
+    if (videoA) {
+      videoA.pause();
+      videoA.muted = true;
+    }
+    if (videoB) {
+      videoB.pause();
+      videoB.muted = true;
+    }
+  }, [isActive]);
 
   useEffect(() => {
     const inactiveVideo = getVideoBySlot(getInactiveSlot());
@@ -503,6 +546,7 @@ export function DemoFeed({
 
   // Keep a persistent gesture listener so any later branch can recover audio from muted fallback.
   useEffect(() => {
+    if (!isActiveRef.current) return;
     if (window.navigator.userActivation?.hasBeenActive) {
       hasUserInteractedRef.current = true;
       const video = getActiveVideo();
@@ -513,6 +557,7 @@ export function DemoFeed({
     }
 
     const handleUserInteraction = () => {
+      if (!isActiveRef.current) return;
       hasUserInteractedRef.current = true;
       const v = getActiveVideo();
       if (!v) return;
@@ -531,7 +576,7 @@ export function DemoFeed({
       document.removeEventListener('pointerdown', handleUserInteraction, { capture: true });
       document.removeEventListener('keydown', handleUserInteraction, { capture: true });
     };
-  }, [activeVideoSlot]);
+  }, [activeVideoSlot, isActive]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -716,7 +761,8 @@ export function DemoFeed({
 
     let didResolve = false;
     const cleanup = () => {
-      previewVideo.removeEventListener('loadeddata', handleLoadedData);
+      previewVideo.removeEventListener('loadeddata', onReady);
+      previewVideo.removeEventListener('canplaythrough', onReady);
       previewVideo.removeEventListener('error', handleError);
       previewVideo.removeAttribute('src');
       previewVideo.load();
@@ -727,10 +773,11 @@ export function DemoFeed({
       cleanup();
       resolve();
     };
-    const handleLoadedData = () => finalize();
+    const onReady = () => finalize();
     const handleError = () => finalize();
 
-    previewVideo.addEventListener('loadeddata', handleLoadedData);
+    previewVideo.addEventListener('loadeddata', onReady);
+    previewVideo.addEventListener('canplaythrough', onReady);
     previewVideo.addEventListener('error', handleError);
     previewVideo.src = src;
     previewVideo.load();
@@ -857,6 +904,7 @@ export function DemoFeed({
   };
 
   const enterBranch = async (branch: BranchType) => {
+    if (!isActiveRef.current) return;
     if (storyPhase !== 'loop' || interactionLockedRef.current) return;
 
     finalizeLoopSpeedSession('branch-selected');
@@ -878,6 +926,7 @@ export function DemoFeed({
   };
 
   const handleVideoEnded = () => {
+    if (!isActiveRef.current) return;
     const phase = storyPhaseRef.current;
     if (phase === 'loop') {
       finalizeLoopSpeedSession('video-ended');
@@ -957,6 +1006,10 @@ export function DemoFeed({
     const incomingVideo = getVideoBySlot(slot);
     const outgoingVideo = getVideoBySlot(slot === 0 ? 1 : 0);
     if (!incomingVideo) return;
+    if (!isActiveRef.current) {
+      incomingVideo.pause();
+      return;
+    }
 
     if (window.navigator.userActivation?.hasBeenActive) {
       hasUserInteractedRef.current = true;
@@ -993,6 +1046,7 @@ export function DemoFeed({
       if (slot !== activeVideoSlot) return;
       const activeVideo = getVideoBySlot(slot);
       if (!activeVideo) return;
+      if (!isActiveRef.current) return;
       if (window.navigator.userActivation?.hasBeenActive) {
         hasUserInteractedRef.current = true;
       }
@@ -1078,6 +1132,7 @@ export function DemoFeed({
   }, [storyPhase]);
 
   useEffect(() => {
+    if (!isActive) return;
     if (storyPhase !== 'loop') return;
 
     preloadAllBranchesForLoop();
@@ -1178,7 +1233,7 @@ export function DemoFeed({
       finalizeLoopSpeedSession('loop-cleanup');
       loopEffectiveRateProbeRef.current = null;
     };
-  }, [storyPhase]);
+  }, [storyPhase, isActive]);
 
   const handleToggleLike = (demoId: number) => {
     setLikedByDemoId((previous) => ({
@@ -1215,6 +1270,7 @@ export function DemoFeed({
   };
 
   const handlePointerDown = () => {
+    if (!isActive) return;
     if (storyPhase !== 'loop' || interactionLockedRef.current) return;
     const rippleId = Date.now() + Math.floor(Math.random() * 1000);
     setInteractionRippleIds((previous) => [...previous, rippleId].slice(-3));
@@ -1266,6 +1322,7 @@ export function DemoFeed({
   };
 
   const handleVideoSurfaceClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!isActive) return;
     if (storyPhaseRef.current === 'loop') return;
     if (isCommentsOpen || isCharactersOpen) return;
 
@@ -1368,7 +1425,7 @@ export function DemoFeed({
                 src={slotSources[0] ?? undefined}
                 className="absolute inset-0 w-full h-full object-cover transition-opacity duration-180 pointer-events-none"
                 style={{ opacity: activeVideoSlot === 0 ? 0.85 : 0 }}
-                autoPlay
+                autoPlay={allowPlayback}
                 loop={shouldLoopSlot(0)}
                 playsInline
                 preload="auto"
@@ -1384,7 +1441,7 @@ export function DemoFeed({
                 src={slotSources[1] ?? undefined}
                 className="absolute inset-0 w-full h-full object-cover transition-opacity duration-180 pointer-events-none"
                 style={{ opacity: activeVideoSlot === 1 ? 0.85 : 0 }}
-                autoPlay
+                autoPlay={allowPlayback}
                 loop={shouldLoopSlot(1)}
                 playsInline
                 preload="auto"

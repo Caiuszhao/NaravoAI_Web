@@ -1,9 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Heart, Maximize, MessageCircle, MoreHorizontal, Plus, X } from 'lucide-react';
+import { ArrowLeft, Heart, Maximize, MessageCircle, MoreHorizontal, Plus, RotateCcw, X } from 'lucide-react';
 import { CUSTOM_LOGO_URL } from './DemoFeed';
-import { resolveCachedMediaUrl } from '../utils/mediaCache';
+import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
+import { getDemo3PrefetchFilenames } from '../utils/demo3Prefetch';
 import { generateText } from '../utils/generateClient';
+import { createMp3ObjectUrl, postPrompt, postTts } from '../utils/promptTtsClient';
+import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
+import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
+import { useDemoDebug } from '../context/DemoDebugContext';
+import { useApiEnv } from '../context/ApiEnvContext';
+
+const DEMO3_COVER_URL = new URL('../../assets/Demo3-cover.jpg', import.meta.url).href;
+
+function safeJson(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
 
 function extractEmotionType(payload: unknown): 1 | 2 | 3 | 4 | 5 | null {
   const asAny = payload as any;
@@ -139,13 +155,23 @@ export function LegacyDemoScreen({
   onBackHome?: () => void;
   isActive?: boolean;
 }) {
+  const { push: pushDebug } = useDemoDebug();
+  const { baseUrl: generateApiBaseUrl } = useApiEnv();
+  const prevDemo3ClipRef = useRef<string | null>(null);
   const isDemo3 = demo.id === 3;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isCharactersOpen, setIsCharactersOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const demo3Video0Ref = useRef<HTMLVideoElement>(null);
+  const demo3Video1Ref = useRef<HTMLVideoElement>(null);
+  const demo3PlaySigRef = useRef('');
   const audioRef = useRef<HTMLAudioElement>(null);
+  const isActiveRef = useRef(isActive);
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
   const [activeVideoIndex, setActiveVideoIndex] = useState(() => {
     const start = demo.startIndex ?? 1;
     return Math.max(0, start - 1);
@@ -177,6 +203,30 @@ export function LegacyDemoScreen({
   const [demo3PromptActive, setDemo3PromptActive] = useState(false);
   const [demo3CountdownActive, setDemo3CountdownActive] = useState(false);
   const [demo3HighEmotionHits, setDemo3HighEmotionHits] = useState(0); // count of emotion_type 4/5 hits (cap at 2)
+  const [demo3ShowReplay, setDemo3ShowReplay] = useState(false);
+  const [demo3Lead, setDemo3Lead] = useState<0 | 1>(0);
+  const [demo3SlotSrc, setDemo3SlotSrc] = useState<[string, string]>(['', '']);
+  const [demo3IsLoading, setDemo3IsLoading] = useState(false);
+  const demo3ReplayTokenRef = useRef(0);
+  const [demo3IsCoverVisible, setDemo3IsCoverVisible] = useState(true);
+  const demo3LastUserReplyRef = useRef('');
+  const demo3NarrationAbortRef = useRef<AbortController | null>(null);
+  const demo3NarrationSigRef = useRef<string>('');
+  const [demo3NarrationText, setDemo3NarrationText] = useState('');
+  const [demo3NarrationAudioUrl, setDemo3NarrationAudioUrl] = useState<string | null>(null);
+  const [demo3NarrationLoading, setDemo3NarrationLoading] = useState(false);
+  const [demo3NarrationError, setDemo3NarrationError] = useState<string | null>(null);
+  const demo3NarrationAudioRef = useRef<HTMLAudioElement>(null);
+  const demo3NarrationUrlUnmountRef = useRef<string | null>(null);
+  const demo3ClipRef = useRef(demo3CurrentFilename);
+  const demo3PromptActiveRef = useRef(demo3PromptActive);
+
+  useEffect(() => {
+    demo3ClipRef.current = demo3CurrentFilename;
+  }, [demo3CurrentFilename]);
+  useEffect(() => {
+    demo3PromptActiveRef.current = demo3PromptActive;
+  }, [demo3PromptActive]);
 
   const activeDirectSrc = isDemo3
     ? getDemo3ClipUrl(demo3CurrentFilename)
@@ -185,6 +235,14 @@ export function LegacyDemoScreen({
 
   const comments = MOCK_COMMENTS_BY_DEMO[demo.id] ?? [];
   const characters = CHARACTERS_BY_DEMO[demo.id] ?? [];
+
+  demo3NarrationUrlUnmountRef.current = demo3NarrationAudioUrl;
+  useEffect(() => {
+    return () => {
+      const u = demo3NarrationUrlUnmountRef.current;
+      if (u) URL.revokeObjectURL(u);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -198,7 +256,6 @@ export function LegacyDemoScreen({
     };
 
     void (async () => {
-      // Warm up BGM and next clip early so index_1 -> ep_2 is smooth.
       if (demo.bgmUrl) {
         const bgmResolved = await resolveCachedMediaUrl(demo.bgmUrl, {
           kind: 'audio',
@@ -206,21 +263,13 @@ export function LegacyDemoScreen({
         });
         putResolved(demo.bgmUrl, bgmResolved);
       }
-
-      const nextUrl = getDemo3ClipUrl('ep_2.mp4');
-      if (nextUrl) {
-        const nextResolved = await resolveCachedMediaUrl(nextUrl, {
-          kind: 'video',
-          signal: controller.signal,
-        });
-        putResolved(nextUrl, nextResolved);
-      }
     })();
 
     return () => controller.abort();
   }, [isActive, isDemo3, demo.bgmUrl, playlist]); // playlist change reflects new URLs
 
   useEffect(() => {
+    if (isDemo3) return;
     const video = videoRef.current;
     if (!video) return;
     if (isActive) {
@@ -228,27 +277,62 @@ export function LegacyDemoScreen({
     } else {
       video.pause();
     }
-  }, [isActive]);
+  }, [isActive, isDemo3]);
+
+  useEffect(() => {
+    if (!isDemo3) return;
+    const v0 = demo3Video0Ref.current;
+    const v1 = demo3Video1Ref.current;
+    if (!v0 || !v1) return;
+    if (!isActive) {
+      v0.pause();
+      v1.pause();
+      return;
+    }
+    const lead = demo3Lead;
+    const active = lead === 0 ? v0 : v1;
+    const other = lead === 0 ? v1 : v0;
+    other.pause();
+    const url = demo3SlotSrc[lead];
+    if (!url) return;
+    const sig = `${lead}|${demo3CurrentFilename}`;
+    const jumped = demo3PlaySigRef.current !== sig;
+    demo3PlaySigRef.current = sig;
+    if (jumped) active.currentTime = 0;
+    void active.play().catch(() => undefined);
+  }, [isDemo3, isActive, demo3Lead, demo3CurrentFilename, demo3SlotSrc]);
+
+  const bgmPlayableSrc = demo.bgmUrl ? (resolvedMediaMap[demo.bgmUrl] ?? demo.bgmUrl) : '';
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !demo.bgmUrl) return;
+
+    if (!isActive) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = true;
+      audio.volume = 0;
+      audio.removeAttribute('src');
+      audio.load();
+      return;
+    }
+
+    // Demo3 ep_last: pause BGM so narration can be heard clearly.
+    if (isDemo3 && demo3CurrentFilename === 'ep_last.mp4') {
+      audio.pause();
+      return;
+    }
 
     const tryStart = () => {
-      if (!isActive) return;
-      // Keep BGM under the video's voice by default.
+      if (!isActiveRef.current) return;
+      audio.muted = false;
       audio.volume = 0.25;
       void audio.play().catch(() => undefined);
     };
 
-    if (isActive) {
-      tryStart();
-    } else {
-      audio.pause();
-      audio.currentTime = 0;
-    }
+    tryStart();
 
-    // Retry on first user interaction if autoplay is blocked.
     const retry = () => tryStart();
     document.addEventListener('pointerdown', retry, { capture: true });
     document.addEventListener('keydown', retry, { capture: true });
@@ -256,17 +340,33 @@ export function LegacyDemoScreen({
       document.removeEventListener('pointerdown', retry, { capture: true } as any);
       document.removeEventListener('keydown', retry, { capture: true } as any);
     };
-  }, [isActive]);
+  }, [isActive, demo.bgmUrl, bgmPlayableSrc, isDemo3, demo3CurrentFilename]);
 
   useEffect(() => {
     if (!isActive) return;
     if (isDemo3) {
+      demo3PlaySigRef.current = '';
+      setDemo3Lead(0);
+      setDemo3SlotSrc(['', '']);
       setDemo3CurrentFilename('index_1.mp4');
       setDemo3Queue(['ep_2.mp4']);
       setDemo3PromptActive(false);
       setDemo3CountdownActive(false);
       setDemo3CountdownLeft(10);
       setDemo3HighEmotionHits(0);
+      setDemo3ShowReplay(false);
+      setDemo3IsCoverVisible(true);
+      demo3LastUserReplyRef.current = '';
+      demo3NarrationAbortRef.current?.abort();
+      demo3NarrationAbortRef.current = null;
+      demo3NarrationSigRef.current = '';
+      setDemo3NarrationText('');
+      setDemo3NarrationError(null);
+      setDemo3NarrationLoading(false);
+      setDemo3NarrationAudioUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       return;
     }
     if (activeVideoIndex === 0) return;
@@ -298,6 +398,7 @@ export function LegacyDemoScreen({
   useEffect(() => {
     if (!isDemo3) return;
     if (!isActive) return;
+    if (demo3ShowReplay) return;
     if (!demo3PromptActive) return;
     if (isDemo3Generating) return;
 
@@ -321,29 +422,76 @@ export function LegacyDemoScreen({
     demo3CountdownLeft,
     demo3InputValue,
     isDemo3Generating,
+    demo3ShowReplay,
   ]);
 
-  // Prefetch next clip when current changes (Demo3 only).
+  // Prefetch current + all reachable branch heads; warm decoders (Demo3 only).
   useEffect(() => {
     if (!isDemo3) return;
     if (!isActive) return;
-    const nextFilename = demo3Queue[0];
-    if (!nextFilename) return;
-    const nextUrl = getDemo3ClipUrl(nextFilename);
-    if (!nextUrl) return;
+    if (playlist.length === 0) return;
+
     const controller = new AbortController();
     const putResolved = (direct: string, resolved: string) => {
       if (!direct || !resolved || direct === resolved) return;
       setResolvedMediaMap((prev) => (prev[direct] === resolved ? prev : { ...prev, [direct]: resolved }));
     };
-    void (async () => {
-      const resolved = await resolveCachedMediaUrl(nextUrl, { kind: 'video', signal: controller.signal });
-      putResolved(nextUrl, resolved);
-    })();
+
+    const filenameSet = new Set<string>([
+      demo3CurrentFilename,
+      ...getDemo3PrefetchFilenames(demo3CurrentFilename, demo3Queue),
+    ]);
+    const directUrls = [...filenameSet]
+      .map((fn) => getDemo3ClipUrl(fn))
+      .filter((u): u is string => Boolean(u));
+    const uniqueDirect = [...new Set(directUrls)];
+
+    const processOne = async (direct: string) => {
+      const resolved = await resolveCachedMediaUrl(direct, { kind: 'video', signal: controller.signal });
+      putResolved(direct, resolved);
+      await warmupVideoUrl(resolved, { signal: controller.signal, timeoutMs: 12000 });
+    };
+
+    const runPool = async (items: string[], concurrency: number) => {
+      const q = [...items];
+      await Promise.all(
+        Array.from({ length: concurrency }, async () => {
+          while (q.length > 0) {
+            const item = q.shift();
+            if (!item) break;
+            try {
+              await processOne(item);
+            } catch {
+              // ignore per-asset failures
+            }
+          }
+        })
+      );
+    };
+
+    void runPool(uniqueDirect, 2);
     return () => controller.abort();
-  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue]);
+  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, playlist]);
+
+  useEffect(() => {
+    if (!isDemo3 || !isActive) return;
+    const curD = getDemo3ClipUrl(demo3CurrentFilename);
+    const curR = curD ? (resolvedMediaMap[curD] ?? curD) : '';
+    const nextF = demo3Queue[0];
+    const nextD = nextF ? getDemo3ClipUrl(nextF) : undefined;
+    const nextR = nextD ? (resolvedMediaMap[nextD] ?? nextD) : '';
+    const L = demo3Lead;
+    setDemo3SlotSrc((prev) => {
+      const next: [string, string] = [...prev];
+      next[L] = curR;
+      next[1 - L] = nextR || '';
+      if (next[0] === prev[0] && next[1] === prev[1]) return prev;
+      return next;
+    });
+  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, demo3Lead, resolvedMediaMap]);
 
   const demo3StartPrompt = (withCountdown: boolean) => {
+    setDemo3InputValue('');
     setDemo3PromptActive(true);
     setDemo3CountdownActive(withCountdown);
     if (withCountdown) {
@@ -377,41 +525,190 @@ export function LegacyDemoScreen({
     }
 
     if (emotionType === 1) {
-      demo3GoTo('ep_3_1.mp4', ['ep_5.mp4']);
+      demo3GoTo('ep_3_1.mp4', ['ep_5.mp4', 'ep_last.mp4']);
       return;
     }
     if (emotionType === 2) {
-      demo3GoTo('ep_3_2.mp4', ['ep_5.mp4']);
+      demo3GoTo('ep_3_2.mp4', ['ep_5.mp4', 'ep_last.mp4']);
       return;
     }
-    demo3GoTo('ep_3_3.mp4', ['ep_5.mp4']);
+    demo3GoTo('ep_3_3.mp4', ['ep_5.mp4', 'ep_last.mp4']);
   };
 
   const applyEmotionAfterEp44 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
-    if (emotionType === 5) {
-      // Directly to ep_3_6
-      demo3GoTo('ep_3_6.mp4', ['ep_5.mp4']);
+    // Second input point (after first emotion_type=4 -> ep_4_3 -> ep_4_4).
+    // - 1/2/3 => A/B/C lines (ep_3_x -> ep_5)
+    // - 4 => D line (ep_3-4 with another prompt)
+    // - 5 => E line end (ep_3_6)
+    if (emotionType === 1) {
+      demo3GoTo('ep_3_1.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+      return;
+    }
+    if (emotionType === 2) {
+      demo3GoTo('ep_3_2.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+      return;
+    }
+    if (emotionType === 3) {
+      demo3GoTo('ep_3_3.mp4', ['ep_5.mp4', 'ep_last.mp4']);
       return;
     }
     if (emotionType === 4) {
-      // ep_3-4 then prompt again
       demo3GoTo('ep_3-4.mp4', []);
       return;
     }
-    // Fallback: treat as end.
-    demo3GoTo('ep_5.mp4', []);
+    demo3GoTo('ep_3_6.mp4', []);
   };
 
   const applyEmotionAfterEp34 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
+    // Third input point (after second emotion_type=4 -> ep_3-4).
+    // - 1/2/3 => A/B/C lines (ep_3_x -> ep_5)
+    // - 4 => play ep_3_5 then end at ep_5
+    // - 5 => E line end (ep_3_6)
+    if (emotionType === 1) {
+      demo3GoTo('ep_3_1.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+      return;
+    }
+    if (emotionType === 2) {
+      demo3GoTo('ep_3_2.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+      return;
+    }
+    if (emotionType === 3) {
+      demo3GoTo('ep_3_3.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+      return;
+    }
     if (emotionType === 4) {
-      demo3GoTo('ep_3_5.mp4', ['ep_5.mp4']);
+      demo3GoTo('ep_3_5.mp4', ['ep_5.mp4', 'ep_last.mp4']);
       return;
     }
-    if (emotionType === 5) {
-      demo3GoTo('ep_3_6.mp4', ['ep_5.mp4']);
+    demo3GoTo('ep_3_6.mp4', []);
+  };
+
+  const applyDemo3EmotionAtCurrentClip = (clip: string, emotionType: 1 | 2 | 3 | 4 | 5) => {
+    if (clip === 'ep4_2.mp4') {
+      if (emotionType === 1) {
+        demo3GoTo('ep_3_1.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+        return;
+      }
+      if (emotionType === 2) {
+        demo3GoTo('ep_3_2.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+        return;
+      }
+      if (emotionType === 3) {
+        demo3GoTo('ep_3_3.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+        return;
+      }
+      if (emotionType === 4) {
+        demo3GoTo('ep_3-4.mp4', []);
+        return;
+      }
+      demo3GoTo('ep_3_6.mp4', []);
       return;
     }
-    demo3GoTo('ep_5.mp4', []);
+    if (clip === 'ep_2.mp4') {
+      applyEmotionBranch(emotionType);
+      return;
+    }
+    if (clip === 'ep_4_4.mp4') {
+      applyEmotionAfterEp44(emotionType);
+      return;
+    }
+    if (clip === 'ep_3-4.mp4') {
+      applyEmotionAfterEp34(emotionType);
+      return;
+    }
+    applyEmotionBranch(emotionType);
+  };
+
+  const applyDemo3EmotionAtCurrentClipRef = useRef(applyDemo3EmotionAtCurrentClip);
+  applyDemo3EmotionAtCurrentClipRef.current = applyDemo3EmotionAtCurrentClip;
+
+  const handleDemo3ReplayFromStart = () => {
+    demo3GenerateAbortRef.current?.abort();
+    demo3GenerateAbortRef.current = null;
+    setIsDemo3Generating(false);
+    setDemo3ShowReplay(false);
+    setDemo3PromptActive(false);
+    setDemo3CountdownActive(false);
+    setDemo3CountdownLeft(10);
+    setDemo3InputValue('');
+    setDemo3HighEmotionHits(0);
+    demo3LastUserReplyRef.current = '';
+    demo3NarrationAbortRef.current?.abort();
+    demo3NarrationAbortRef.current = null;
+    demo3NarrationSigRef.current = '';
+    setDemo3NarrationText('');
+    setDemo3NarrationError(null);
+    setDemo3NarrationLoading(false);
+    setDemo3NarrationAudioUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setDemo3IsLoading(true);
+
+    const token = ++demo3ReplayTokenRef.current;
+    const controller = new AbortController();
+
+    const waitForReady = (video: HTMLVideoElement, timeoutMs: number) =>
+      new Promise<void>((resolve) => {
+        if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return resolve();
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          video.removeEventListener('canplay', finish);
+          video.removeEventListener('loadeddata', finish);
+          video.removeEventListener('error', finish);
+          window.clearTimeout(tid);
+          resolve();
+        };
+        const tid = window.setTimeout(finish, timeoutMs);
+        video.addEventListener('canplay', finish);
+        video.addEventListener('loadeddata', finish);
+        video.addEventListener('error', finish);
+      });
+
+    void (async () => {
+      try {
+        const indexDirect = getDemo3ClipUrl('index_1.mp4');
+        const ep2Direct = getDemo3ClipUrl('ep_2.mp4');
+        if (!indexDirect) return;
+
+        const indexResolved = await resolveCachedMediaUrl(indexDirect, { kind: 'video', signal: controller.signal });
+        if (token !== demo3ReplayTokenRef.current) return;
+        // Warm up decoder so first frame is ready ASAP.
+        await warmupVideoUrl(indexResolved, { signal: controller.signal, timeoutMs: 12000 });
+        if (token !== demo3ReplayTokenRef.current) return;
+
+        const ep2Resolved = ep2Direct
+          ? await resolveCachedMediaUrl(ep2Direct, { kind: 'video', signal: controller.signal })
+          : '';
+        if (token !== demo3ReplayTokenRef.current) return;
+        if (ep2Resolved) await warmupVideoUrl(ep2Resolved, { signal: controller.signal, timeoutMs: 12000 });
+        if (token !== demo3ReplayTokenRef.current) return;
+
+        // Reset playback state AFTER we have something ready to render.
+        demo3PlaySigRef.current = '';
+        setDemo3Lead(0);
+        setDemo3CurrentFilename('index_1.mp4');
+        setDemo3Queue(['ep_2.mp4']);
+        setDemo3SlotSrc([indexResolved, ep2Resolved || '']);
+
+        const v0 = demo3Video0Ref.current;
+        if (v0) {
+          v0.pause();
+          v0.currentTime = 0;
+          v0.load();
+          await waitForReady(v0, 2500);
+          if (token !== demo3ReplayTokenRef.current) return;
+          void v0.play().catch(() => undefined);
+        }
+      } catch {
+        // ignore
+      } finally {
+        controller.abort();
+        if (token === demo3ReplayTokenRef.current) setDemo3IsLoading(false);
+      }
+    })();
   };
 
   const submitDemo3Input = async () => {
@@ -419,7 +716,14 @@ export function LegacyDemoScreen({
 
     const rawText = demo3InputValue;
     const trimmed = rawText.trim();
+    demo3LastUserReplyRef.current = trimmed;
     let emotionType: 1 | 2 | 3 | 4 | 5 = 5;
+
+    pushDebug({
+      kind: 'api_request',
+      title: 'POST /api/v1/generate (Demo3)',
+      body: `${safeJson({ text: trimmed })}\ncontext: clip=${demo3CurrentFilename}`,
+    });
 
     // Empty input => emotion_type=5 (retry).
     if (trimmed) {
@@ -428,51 +732,174 @@ export function LegacyDemoScreen({
       demo3GenerateAbortRef.current = controller;
       setIsDemo3Generating(true);
       try {
-        const result = await generateText({ text: trimmed }, { signal: controller.signal });
+        const result = await generateText(
+          { text: trimmed },
+          { signal: controller.signal, baseUrl: generateApiBaseUrl }
+        );
         emotionType = extractEmotionType(result) ?? 5;
+        pushDebug({
+          kind: 'api_response',
+          title: 'Generate OK (Demo3)',
+          body: `${safeJson(result)}\nresolved emotion_type: ${emotionType}`,
+        });
       } catch (error) {
         console.warn('[demo3] generate failed', error);
         emotionType = 5;
+        pushDebug({
+          kind: 'api_error',
+          title: 'Generate failed (Demo3)',
+          body: error instanceof Error ? error.message : safeJson(error),
+        });
       } finally {
         if (demo3GenerateAbortRef.current === controller) {
           demo3GenerateAbortRef.current = null;
         }
         setIsDemo3Generating(false);
       }
+    } else {
+      pushDebug({
+        kind: 'api_response',
+        title: 'Generate skipped (Demo3)',
+        body: 'Empty input — no HTTP call. emotion_type defaults to 5.',
+      });
     }
 
     const isHighEmotion = emotionType === 4 || emotionType === 5;
-    const nextHighHits = demo3HighEmotionHits + (isHighEmotion ? 1 : 0);
-    if (isHighEmotion) {
-      setDemo3HighEmotionHits(nextHighHits);
-      // If emotion_type is 4/5 (or combination) hits cap, go straight to result video.
-      if (nextHighHits >= 2) {
-        demo3StopPrompt();
-        demo3GoTo('ep_5.mp4', []);
-        return;
-      }
-    }
+    if (isHighEmotion) setDemo3HighEmotionHits((h) => h + 1);
 
     // Stop prompt UI before transitioning.
     demo3StopPrompt();
-
-    // Decide which decision point we are at based on current clip.
-    if (demo3CurrentFilename === 'ep_2.mp4') {
-      applyEmotionBranch(emotionType);
-      return;
-    }
-    if (demo3CurrentFilename === 'ep_4_4.mp4') {
-      applyEmotionAfterEp44(emotionType);
-      return;
-    }
-    if (demo3CurrentFilename === 'ep_3-4.mp4') {
-      applyEmotionAfterEp34(emotionType);
-      return;
-    }
-
-    // If prompt came from post-ep4_2 retry point, treat as initial decision.
-    applyEmotionBranch(emotionType);
+    applyDemo3EmotionAtCurrentClip(demo3CurrentFilename, emotionType);
   };
+
+  useEffect(() => {
+    if (!isDemo3) return;
+    const onDebugEmotion = (e: Event) => {
+      if (!isActiveRef.current) return;
+      const ce = e as CustomEvent<{ emotionType?: number; fixedReply?: string }>;
+      const raw = ce.detail?.emotionType;
+      const et = Number(raw);
+      if (!Number.isFinite(et) || et < 1 || et > 5) return;
+      const emotionType = et as 1 | 2 | 3 | 4 | 5;
+      if (!demo3PromptActiveRef.current) {
+        pushDebug({
+          kind: 'api_error',
+          title: 'Demo3 · inject ignored',
+          body: '当前没有打开的输入框（需在 ep_2 / ep4_2 / ep_4_4 / ep_3-4 等输入点）。',
+        });
+        return;
+      }
+      const reply = typeof ce.detail?.fixedReply === 'string' ? ce.detail.fixedReply : DEMO3_FIXED_TEST_REPLY;
+      demo3LastUserReplyRef.current = reply;
+      setDemo3InputValue(reply);
+      const isHighEmotion = emotionType === 4 || emotionType === 5;
+      if (isHighEmotion) setDemo3HighEmotionHits((h) => h + 1);
+      demo3StopPrompt();
+      const clip = demo3ClipRef.current;
+      pushDebug({
+        kind: 'video_branch',
+        title: 'Demo3 · DEBUG inject',
+        body: `clip=${clip}\nforced emotion_type=${emotionType}\nfixed reply: ${reply}`,
+      });
+      applyDemo3EmotionAtCurrentClipRef.current(clip, emotionType);
+    };
+    window.addEventListener('naravo:demo3-debug-emotion', onDebugEmotion);
+    return () => window.removeEventListener('naravo:demo3-debug-emotion', onDebugEmotion);
+  }, [isDemo3, pushDebug]);
+
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!isActive) {
+      prevDemo3ClipRef.current = null;
+      return;
+    }
+    if (prevDemo3ClipRef.current === demo3CurrentFilename) return;
+    prevDemo3ClipRef.current = demo3CurrentFilename;
+    const queueStr = demo3Queue.length ? demo3Queue.join(' → ') : '(empty)';
+    pushDebug({
+      kind: 'video_branch',
+      title: 'Demo3 · branch clip',
+      body: `playing: ${demo3CurrentFilename}\nqueue: ${queueStr}`,
+    });
+  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, pushDebug]);
+
+  // Demo3 A/B/C/D: while ep_5 is loading/playing (and ep_last is next), generate narration text + TTS audio.
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!isActive) return;
+    if (demo3CurrentFilename !== 'ep_5.mp4') return;
+    if (demo3Queue[0] !== 'ep_last.mp4') return;
+
+    const sig = `${demo3ReplayTokenRef.current}|${demo3LastUserReplyRef.current}`;
+    if (demo3NarrationSigRef.current === sig) return;
+    demo3NarrationSigRef.current = sig;
+
+    demo3NarrationAbortRef.current?.abort();
+    const controller = new AbortController();
+    demo3NarrationAbortRef.current = controller;
+    setDemo3NarrationLoading(true);
+    setDemo3NarrationError(null);
+
+    void (async () => {
+      try {
+        const prompt = buildPromptTtsFullPrompt(demo3LastUserReplyRef.current);
+        pushDebug({
+          kind: 'api_request',
+          title: 'POST /api/v1/prompt (Demo3 ep_5 narration)',
+          body: safeJson({ prompt }),
+        });
+        const promptRes = await postPrompt({ prompt }, { baseUrl: generateApiBaseUrl, signal: controller.signal });
+        const text = (promptRes.text ?? '').trim();
+        if (!text) throw new Error('Prompt API returned empty text');
+        setDemo3NarrationText(text);
+        pushDebug({
+          kind: 'api_response',
+          title: 'Prompt OK (Demo3 ep_5 narration)',
+          body: text,
+        });
+
+        pushDebug({
+          kind: 'api_request',
+          title: 'POST /api/v1/tts (Demo3 ep_5 narration)',
+          body: safeJson({ text }),
+        });
+        const blob = await postTts(
+          { text, per: 0, spd: 5, pit: 5, vol: 5 },
+          { baseUrl: generateApiBaseUrl, signal: controller.signal }
+        );
+        const url = createMp3ObjectUrl(blob);
+        setDemo3NarrationAudioUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        pushDebug({
+          kind: 'api_response',
+          title: 'TTS OK (Demo3 ep_5 narration)',
+          body: `audio/mpeg blob: ${blob.size} bytes`,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : safeJson(e);
+        setDemo3NarrationError(msg);
+        pushDebug({
+          kind: 'api_error',
+          title: 'Narration prompt/tts failed (Demo3 ep_5)',
+          body: msg,
+        });
+      } finally {
+        if (demo3NarrationAbortRef.current === controller) demo3NarrationAbortRef.current = null;
+        setDemo3NarrationLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [
+    isDemo3,
+    isActive,
+    demo3CurrentFilename,
+    demo3Queue,
+    generateApiBaseUrl,
+    pushDebug,
+  ]);
 
   // When Demo3 enters specific clips, activate prompts/countdown as required.
   useEffect(() => {
@@ -498,6 +925,76 @@ export function LegacyDemoScreen({
     demo3StopPrompt();
   }, [isDemo3, isActive, demo3CurrentFilename]);
 
+  // Demo3 ep_last: play narration audio on top.
+  useEffect(() => {
+    if (!isDemo3) return;
+    if (!isActive) return;
+    if (demo3CurrentFilename !== 'ep_last.mp4') return;
+    const a = demo3NarrationAudioRef.current;
+    if (!a) return;
+    a.currentTime = 0;
+    void a.play().catch(() => undefined);
+    return () => {
+      a.pause();
+    };
+  }, [isDemo3, isActive, demo3CurrentFilename, demo3NarrationAudioUrl]);
+
+  useEffect(() => {
+    if (!isDemo3 || !demo3ShowReplay) return;
+    demo3Video0Ref.current?.pause();
+    demo3Video1Ref.current?.pause();
+    demo3NarrationAudioRef.current?.pause();
+  }, [isDemo3, demo3ShowReplay]);
+
+  const handleDemo3VideoEnded = (e: SyntheticEvent<HTMLVideoElement>) => {
+    const leadEl = demo3Lead === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+    if (e.currentTarget !== leadEl) return;
+
+    if (demo3CurrentFilename === 'ep4_2.mp4') {
+      demo3StartPrompt(false);
+      return;
+    }
+    const next = demo3Queue[0];
+    if (next) {
+      const inactiveIdx = demo3Lead === 0 ? 1 : 0;
+      const inactiveEl = inactiveIdx === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+
+      const proceed = () => {
+        setDemo3Lead((l) => (l === 0 ? 1 : 0));
+        setDemo3CurrentFilename(next);
+        setDemo3Queue((q) => q.slice(1));
+      };
+
+      if (!inactiveEl || inactiveEl.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+        proceed();
+        return;
+      }
+
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        inactiveEl.removeEventListener('canplay', finish);
+        inactiveEl.removeEventListener('loadeddata', finish);
+        inactiveEl.removeEventListener('error', finish);
+        window.clearTimeout(tid);
+        proceed();
+      };
+      const tid = window.setTimeout(finish, 2500);
+      inactiveEl.addEventListener('canplay', finish);
+      inactiveEl.addEventListener('loadeddata', finish);
+      inactiveEl.addEventListener('error', finish);
+      return;
+    }
+    if (
+      demo3CurrentFilename === 'ep_last.mp4' ||
+      demo3CurrentFilename === 'ep_3_6.mp4' ||
+      (demo3CurrentFilename === 'ep_5.mp4' && !demo3Queue[0])
+    ) {
+      setDemo3ShowReplay(true);
+    }
+  };
+
   return (
     <div className="w-full h-full relative overflow-hidden">
       {isMenuOpen && <div className="absolute inset-0 z-[60]" onClick={() => setIsMenuOpen(false)} />}
@@ -521,49 +1018,112 @@ export function LegacyDemoScreen({
         {demo.bgmUrl && (
           <audio
             ref={audioRef}
-            src={resolvedMediaMap[demo.bgmUrl] ?? demo.bgmUrl}
+            src={isActive ? bgmPlayableSrc : undefined}
             autoPlay={isActive}
+            muted={!isActive}
             loop
             preload="auto"
           />
         )}
-        <video
-          ref={videoRef}
-          src={activeSrc}
-          className="w-full h-full object-cover opacity-85"
-          autoPlay={isActive}
-          loop={!isDemo3 && playlist.length <= 1}
-          muted={!demo.playVideoAudio}
-          playsInline
-          preload="auto"
-          onEnded={() => {
-            if (isDemo3) {
-              // Demo3 is driven by a queue/state machine.
-              if (demo3CurrentFilename === 'ep4_2.mp4') {
-                // After ep_4_2 playback, prompt again (retry input point).
-                demo3StartPrompt(false);
-                return;
-              }
-
-              const next = demo3Queue[0];
-              if (next) {
-                setDemo3CurrentFilename(next);
-                setDemo3Queue((prev) => prev.slice(1));
-                return;
-              }
-              return;
-            }
-
-            if (playlist.length <= 1) return;
-            setActiveVideoIndex((previous) => {
-              const next = previous + 1;
-              return next >= playlist.length ? 0 : next;
-            });
-          }}
-        />
+        {isDemo3 && (
+          <audio
+            ref={demo3NarrationAudioRef}
+            src={demo3NarrationAudioUrl ?? undefined}
+            preload="auto"
+          />
+        )}
+        {isDemo3 ? (
+          <>
+            <video
+              ref={demo3Video0Ref}
+              src={demo3SlotSrc[0] || undefined}
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+                demo3Lead === 0 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
+              }`}
+              autoPlay={false}
+              loop={false}
+              muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
+              playsInline
+              preload="auto"
+              onEnded={handleDemo3VideoEnded}
+              onLoadedData={() => {
+                if (demo3Lead === 0) setDemo3IsCoverVisible(false);
+              }}
+            />
+            <video
+              ref={demo3Video1Ref}
+              src={demo3SlotSrc[1] || undefined}
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+                demo3Lead === 1 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
+              }`}
+              autoPlay={false}
+              loop={false}
+              muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
+              playsInline
+              preload="auto"
+              onEnded={handleDemo3VideoEnded}
+              onLoadedData={() => {
+                if (demo3Lead === 1) setDemo3IsCoverVisible(false);
+              }}
+            />
+          </>
+        ) : (
+          <video
+            ref={videoRef}
+            src={activeSrc}
+            className="w-full h-full object-cover opacity-85"
+            autoPlay={isActive}
+            loop={playlist.length <= 1}
+            muted={!demo.playVideoAudio}
+            playsInline
+            preload="auto"
+            onEnded={() => {
+              if (playlist.length <= 1) return;
+              setActiveVideoIndex((previous) => {
+                const next = previous + 1;
+                return next >= playlist.length ? 0 : next;
+              });
+            }}
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_10%,rgba(0,0,0,0.55)_100%)]" />
       </div>
+
+      {isDemo3 && demo3CurrentFilename === 'ep_last.mp4' && (
+        <div className="absolute left-0 right-0 bottom-[5.75rem] z-[75] px-4 pointer-events-none">
+          <div className="mx-auto max-w-[520px] rounded-2xl border border-white/15 bg-black/55 backdrop-blur-xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.42)]">
+            {demo3NarrationLoading && (
+              <p className="text-[11px] tracking-[0.14em] uppercase text-white/70">Generating narration…</p>
+            )}
+            {demo3NarrationError && !demo3NarrationLoading && (
+              <p className="text-[12px] text-red-200/90">{demo3NarrationError}</p>
+            )}
+            {demo3NarrationText && (
+              <p className="text-[14px] leading-relaxed text-white/92 whitespace-pre-wrap">{demo3NarrationText}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {isDemo3 && demo3IsCoverVisible && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="absolute inset-0 z-[5] pointer-events-none"
+          >
+            <img src={DEMO3_COVER_URL} alt="Demo 3 cover" className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-black/38" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className="w-14 h-14 rounded-full border border-white/20 border-t-white/85 animate-spin" />
+              <p className="mt-3 text-[10px] uppercase tracking-[0.24em] text-white/80">Loading Demo</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {isDemo3 && demo3CountdownActive && (
         <>
@@ -576,6 +1136,25 @@ export function LegacyDemoScreen({
             </div>
           </div>
         </>
+      )}
+
+      {isDemo3 && demo3ShowReplay && (
+        <div className="absolute inset-0 z-[82] flex items-center justify-center pointer-events-auto px-6 bg-black/40 backdrop-blur-[2px]">
+          <button
+            type="button"
+            onClick={handleDemo3ReplayFromStart}
+            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-white/10 backdrop-blur-xl text-white text-[11px] font-semibold tracking-[0.14em] uppercase border border-white/25 hover:bg-white/16 hover:border-white/35 active:scale-[0.98] transition-all shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
+      )}
+
+      {isDemo3 && demo3IsLoading && (
+        <div className="absolute inset-0 z-[81] flex items-center justify-center pointer-events-none">
+          <div className="w-12 h-12 rounded-full border border-white/20 border-t-white/80 animate-spin" />
+        </div>
       )}
 
       {isDemo3 && demo3PromptActive && (

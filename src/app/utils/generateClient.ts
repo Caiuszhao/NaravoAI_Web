@@ -10,12 +10,16 @@ export type GenerateResponse = {
   raw?: unknown;
 };
 
-const DEFAULT_BASE_URL = 'http://localhost:8000';
+/** 线上（生产）网关 */
+export const DEFAULT_GENERATE_API_BASE_URL = 'http://101.42.45.113:8000';
+
+/** 本地测试网关 */
+export const LOCAL_GENERATE_API_BASE_URL = 'http://127.0.0.1:8000';
 
 export async function generateText(
   input: GenerateRequest,
   {
-    baseUrl = DEFAULT_BASE_URL,
+    baseUrl = DEFAULT_GENERATE_API_BASE_URL,
     signal,
   }: {
     baseUrl?: string;
