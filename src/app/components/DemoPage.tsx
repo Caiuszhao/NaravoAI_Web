@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { DemoFeed, DEMOS, CUSTOM_LOGO_URL } from './DemoFeed';
+import { DemoFeed } from './DemoFeed';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Fingerprint, Crosshair, Play } from 'lucide-react';
 import { LegacyDemoScreen } from './LegacyDemoScreen';
+import { DEMOS, CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
-  const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(false);
+  // Entering the demo page should start Demo 1 playback immediately.
+  const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(true);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const isProgrammaticScrollRef = useRef(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => {

@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, MoreHorizontal, MousePointerClick, Heart, MessageCircle, Plus, Maximize, RotateCcw, Share2, Wand2, X, Play } from 'lucide-react';
-import { STORY1_VIDEOS, DEMO3_VIDEOS } from '../storyVideos';
+import { MousePointerClick, Heart, X } from 'lucide-react';
+import { STORY1_VIDEOS } from '../storyVideos';
 import { useDemoDebug } from '../context/DemoDebugContext';
+import { CUSTOM_LOGO_URL, DEMOS, STORY_CONFIG as STORY_SCENARIO } from '../interactive/scenarios/demoScenarios';
+import { usePlayerShell } from '../interactive/core/usePlayerShell';
+import { PlayerShellCenterOverlay } from '../interactive/core/PlayerShellCenterOverlay';
+import { DemoEngagementPanel } from '../interactive/engagement/DemoEngagementPanel';
+import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
+import type { DemoCharacterPreview } from '../interactive/types/demo';
 
-const CUSTOM_LOGO_URL = new URL('../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png', import.meta.url).href;
 const DEMO1_COVER_URL = new URL('../../assets/Demo1-cover.jpg', import.meta.url).href;
 
 const STORY_INTRO_VIDEO = STORY1_VIDEOS.intro;
@@ -32,13 +37,7 @@ export type StoryPlaybackSnapshot = {
 };
 
 const STORY_CONFIG = {
-  id: 1,
-  title: 'Wasteland Run: Escape Partner',
-  feedHook: 'You and your partner race to a jammed shelter gate. Break the lock in 5 seconds before the horde catches you.',
-  showcaseHook: 'You and a dangerous ally are chased by a horde to a jammed shelter gate. Break the lock in 5 seconds, or get dragged in bleeding as the dead close in.',
-  interactionMethod: 'Tap count in 5s window',
-  objective: 'Guide the user into three distinct outcomes from a shared loop segment.',
-  commentCount: '1,284',
+  ...STORY_SCENARIO,
   countdownLabel: 'Tension',
   countdownHint: 'Gate lock breach window',
   countdownDurationSeconds: 5,
@@ -55,36 +54,6 @@ const STORY_CONFIG = {
     rapid: 'Forced entry failed',
   },
 } as const;
-
-const LEGACY_DEMO_2 = {
-  id: 2,
-  title: 'Machine Uprising: Core Lockdown',
-  feedHook: 'Coming Soon. A rogue service robot seals the evacuation elevator. Trigger a timed override before the control core wipes your access keys.',
-  showcaseHook: 'Coming Soon. Inside a collapsing arcology, a maintenance robot has turned hostile and locked the emergency lift. You must send the correct override pattern before the AI core purges civilian credentials.',
-  interactionMethod: 'Sequence Tap Override',
-  objective: 'Input the correct command pattern to unlock the elevator and contain the robot',
-  commentCount: '3,778',
-  mediaType: 'video' as const,
-  videoBg: 'https://image-b2.civitai.com/file/civitai-media-cache/00f5df14-2645-4ca5-8d99-bde8b833c6f4/original',
-};
-
-const LEGACY_DEMO_3 = {
-  id: 3,
-  title: 'One Man Station',
-  feedHook: 'Coming Soon. A lone astronaut gets one unstable relay burst. Your reply decides if he risks a final EVA repair or records a goodbye.',
-  showcaseHook: 'Coming Soon. A lone astronaut drifting on a dying station restores one unstable relay burst. Your reply decides whether he risks one last EVA repair or records a final goodbye.',
-  interactionMethod: 'Voice or Text Reply',
-  objective: 'Send the message that shapes his final decision',
-  commentCount: '2,154',
-  mediaType: 'video' as const,
-  videoBg: DEMO3_VIDEOS[0],
-  videos: DEMO3_VIDEOS,
-  bgmUrl: 'https://playable-1257281110.cos.ap-guangzhou.myqcloud.com/story_last_day/demo2/demo2_bgm.mp3',
-  playVideoAudio: true,
-};
-
-export const DEMOS = [STORY_CONFIG, LEGACY_DEMO_2, LEGACY_DEMO_3];
-export { CUSTOM_LOGO_URL };
 
 const MOCK_COMMENTS_BY_DEMO: Record<number, Array<{ id: number; name: string; handle: string; text: string; likes: string; time: string }>> = {
   1: [
@@ -311,8 +280,6 @@ export function DemoFeed({
     lastSampleAtMs: number;
   } | null>(null);
 
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [likedByDemoId, setLikedByDemoId] = useState<Record<number, boolean>>({});
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [activeCommentsDemoId, setActiveCommentsDemoId] = useState<number | null>(STORY_CONFIG.id);
@@ -327,8 +294,6 @@ export function DemoFeed({
     () => SESSION_RESOLVED_SOURCES.intro !== VIDEO_ASSET_URLS.intro
   );
   const [showBranchReplay, setShowBranchReplay] = useState(false);
-  const [isVideoPaused, setIsVideoPaused] = useState(false);
-  const [isPausedByUser, setIsPausedByUser] = useState(false);
   const [isBranchTransitionLoading, setIsBranchTransitionLoading] = useState(false);
   const [isInteractionButtonPressed, setIsInteractionButtonPressed] = useState(false);
   const [interactionRippleIds, setInteractionRippleIds] = useState<number[]>([]);
@@ -391,6 +356,27 @@ export function DemoFeed({
     storyPhase === 'loop' &&
     activeVideoSlot === slot &&
     slotSources[slot] === resolvedVideoSources.loop;
+
+  const {
+    isFullscreen,
+    setIsFullscreen,
+    isVideoPaused,
+    setIsVideoPaused,
+    isPausedByUser,
+    setIsPausedByUser,
+    handleVideoSurfaceClick,
+    handleResumePlayback,
+    resetPauseUiState,
+  } = usePlayerShell({
+    isActive: allowPlayback,
+    getActiveVideo,
+    bindingKey: `${activeVideoSlot}:${currentVideoSrc}`,
+    canTogglePause: () =>
+      storyPhaseRef.current !== 'loop' && !isCommentsOpen && !isCharactersOpen && !showBranchReplay,
+    onAfterResume: () => {
+      hasUserInteractedRef.current = true;
+    },
+  });
 
   useEffect(() => {
     onStoryStateChange?.(playbackSnapshot);
@@ -469,25 +455,6 @@ export function DemoFeed({
     inactiveVideo.muted = true;
     inactiveVideo.volume = 0;
   }, [activeVideoSlot, slotSources]);
-
-  useEffect(() => {
-    const video = getActiveVideo();
-    if (!video) return;
-
-    const handlePause = () => setIsVideoPaused(true);
-    const handlePlay = () => {
-      setIsVideoPaused(false);
-      setIsPausedByUser(false);
-    };
-
-    video.addEventListener('pause', handlePause);
-    video.addEventListener('play', handlePlay);
-
-    return () => {
-      video.removeEventListener('pause', handlePause);
-      video.removeEventListener('play', handlePlay);
-    };
-  }, [activeVideoSlot, isIntroReady]);
 
   useEffect(() => {
     // Prevent pause overlay flash during source/phase transitions.
@@ -947,8 +914,7 @@ export function DemoFeed({
     setShowBranchReplay(false);
     interactionLockedRef.current = false;
     setIsBranchTransitionLoading(false);
-    setIsPausedByUser(false);
-    setIsVideoPaused(false);
+    resetPauseUiState();
     setIsInteractionButtonPressed(false);
     setInteractionRippleIds([]);
     setLoopWindowProgress(0);
@@ -1311,39 +1277,6 @@ export function DemoFeed({
     setIsInteractionButtonPressed(false);
   };
 
-  const handleResumePlayback = () => {
-    const video = getActiveVideo();
-    if (!video) return;
-    hasUserInteractedRef.current = true;
-    setIsPausedByUser(false);
-    video.muted = false;
-    video.volume = 1;
-    void video.play().catch(() => undefined);
-  };
-
-  const handleVideoSurfaceClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (!isActive) return;
-    if (storyPhaseRef.current === 'loop') return;
-    if (isCommentsOpen || isCharactersOpen) return;
-
-    const target = event.target as HTMLElement;
-    if (target.closest('[data-ui-layer="true"]')) return;
-
-    const video = getActiveVideo();
-    if (!video || video.ended) return;
-
-    if (video.paused) {
-      hasUserInteractedRef.current = true;
-      video.muted = false;
-      video.volume = 1;
-      void video.play().catch(() => undefined);
-      return;
-    }
-
-    setIsPausedByUser(true);
-    video.pause();
-    setIsVideoPaused(true);
-  };
 
   const isBranchPhase =
     storyPhase === 'branch_click' || storyPhase === 'branch_hold' || storyPhase === 'branch_rapid';
@@ -1374,47 +1307,7 @@ export function DemoFeed({
 
   return (
     <div className="w-full h-full relative overflow-hidden">
-      {isMenuOpen && <div className="absolute inset-0 z-[60]" onClick={() => setIsMenuOpen(false)} />}
-
-      <div data-ui-layer="true" className={`absolute top-0 left-0 w-full px-5 pt-12 pb-5 z-[70] flex items-center justify-between pointer-events-none transition-opacity duration-300 ${isFullscreen ? 'opacity-0' : 'opacity-100'}`}>
-        <button
-          onClick={onBackHome}
-          className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white pointer-events-auto hover:bg-black/60 transition-all active:scale-95 relative z-10"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex gap-3 pointer-events-auto relative">
-          <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white hover:bg-black/60 transition-all relative z-10"
-          >
-            <MoreHorizontal className="w-5 h-5" />
-          </button>
-
-          <AnimatePresence>
-            {isMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                transition={{ duration: 0.15 }}
-                className="absolute top-12 right-0 bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden min-w-[160px] shadow-2xl z-20"
-              >
-                <div className="flex flex-col py-1.5">
-                  <button className="flex items-center gap-3 px-4 py-2.5 text-white/90 hover:text-white hover:bg-white/10 transition-colors w-full text-left">
-                    <Share2 className="w-4 h-4" />
-                    <span className="text-sm font-medium">Share Story</span>
-                  </button>
-                  <button className="flex items-center gap-3 px-4 py-2.5 text-white/90 hover:text-white hover:bg-white/10 transition-colors w-full text-left">
-                    <Wand2 className="w-4 h-4" />
-                    <span className="text-sm font-medium">Remix Flow</span>
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
+      <DemoTopBar onBackHome={onBackHome ?? (() => undefined)} hideChrome={isFullscreen} />
 
       <div className="w-full h-full relative bg-black overflow-hidden" onClick={handleVideoSurfaceClick}>
         <div className="absolute inset-0 z-0 bg-black">
@@ -1537,66 +1430,24 @@ export function DemoFeed({
                 </motion.div>
 
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-2">
-                  <div className="flex flex-row items-center justify-between w-full min-w-0">
-                    <div className={`relative flex flex-col items-center shrink-0 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                      <div className="w-[30px] h-[30px] rounded-full border-2 border-white overflow-hidden bg-black/50 relative">
-                        <img src={CUSTOM_LOGO_URL} alt="Avatar" className="w-full h-full object-cover animate-ping absolute inset-0" style={{ animationDuration: '3s' }} />
-                        <img src={CUSTOM_LOGO_URL} alt="Avatar" className="w-full h-full object-cover relative z-10" />
-                      </div>
-                      <button className="absolute -bottom-1.5 w-[14px] h-[14px] bg-red-500 rounded-full flex items-center justify-center text-white shadow-sm border border-white hover:bg-red-600 transition-colors z-20">
-                        <Plus className="w-[8px] h-[8px]" strokeWidth={3} />
-                      </button>
-                    </div>
-
-                    <div className={`flex flex-row items-center gap-1 shrink-0 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                      <button
-                        onClick={() => handleToggleLike(STORY_CONFIG.id)}
-                        className={`flex items-center justify-center hover:scale-110 active:scale-90 transition-transform ${likedByDemoId[STORY_CONFIG.id] ? 'text-red-500' : 'text-white'}`}
-                      >
-                        <Heart className="w-6 h-6 fill-current drop-shadow-md" />
-                      </button>
-                      <span className="text-white font-semibold text-[12px] drop-shadow-md">136.1K</span>
-                    </div>
-
-                    <div className={`flex flex-row items-center gap-1 shrink-0 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                      <button
-                        onClick={() => handleOpenComments(STORY_CONFIG.id)}
-                        className="flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform"
-                      >
-                        <MessageCircle className="w-6 h-6 fill-current drop-shadow-md" style={{ transform: 'scaleX(-1)' }} />
-                      </button>
-                      <span className="text-white font-semibold text-[12px] drop-shadow-md">{STORY_CONFIG.commentCount}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleOpenCharacters(STORY_CONFIG.id)}
-                      className={`h-7 px-1 rounded-full border border-white/15 bg-black/45 backdrop-blur-lg flex items-center hover:bg-black/60 transition-all z-50 shrink-0 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-                      aria-label="Open cast list"
-                    >
-                      <div className="flex items-center">
-                        {(CHARACTERS_BY_DEMO[STORY_CONFIG.id] ?? []).slice(0, 2).map((character, index) => (
-                          <div
-                            key={character.id}
-                            className={`w-4.5 h-4.5 rounded-full border border-white/25 overflow-hidden ${index === 0 ? 'ml-0' : '-ml-1'} ${character.unlocked ? 'bg-white/10' : 'bg-white/5'} flex items-center justify-center`}
-                          >
-                            {character.unlocked && character.avatar ? (
-                              <img src={character.avatar} alt={character.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-[8px] text-white/70 font-bold">?</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={handleToggleFullscreen}
-                      className="flex items-center justify-center text-white/25 hover:text-white hover:scale-110 active:scale-90 transition-all z-50 shrink-0"
-                    >
-                      <Maximize className="w-[22px] h-[22px] drop-shadow-md" />
-                    </button>
-                  </div>
+                  <DemoEngagementPanel
+                    avatarUrl={CUSTOM_LOGO_URL}
+                    isLiked={Boolean(likedByDemoId[STORY_CONFIG.id])}
+                    likeCountText="136.1K"
+                    commentCountText={STORY_CONFIG.commentCount}
+                    characters={(CHARACTERS_BY_DEMO[STORY_CONFIG.id] ?? []).map((character) => ({
+                      id: character.id,
+                      name: character.name,
+                      unlocked: character.unlocked,
+                      avatar: character.avatar,
+                    })) as DemoCharacterPreview[]}
+                    onToggleLike={() => handleToggleLike(STORY_CONFIG.id)}
+                    onOpenComments={() => handleOpenComments(STORY_CONFIG.id)}
+                    onOpenCharacters={() => handleOpenCharacters(STORY_CONFIG.id)}
+                    onToggleFullscreen={handleToggleFullscreen}
+                    hideNonInteractiveUi={isFullscreen}
+                    enableFullscreen={STORY_CONFIG.ui.enableFullscreen}
+                  />
                 </motion.div>
               </div>
             </div>
@@ -1656,35 +1507,25 @@ export function DemoFeed({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   className="flex flex-col items-center gap-3 pointer-events-auto"
-                >
-                  {isBranchPhase && showBranchReplay && (
-                    <button
-                      type="button"
-                      onClick={handleReplayFromStart}
-                      className="mt-2 flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-white/10 backdrop-blur-xl text-white text-[11px] font-semibold tracking-[0.14em] uppercase border border-white/25 hover:bg-white/16 hover:border-white/35 active:scale-[0.98] transition-all shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      Replay
-                    </button>
-                  )}
-                </motion.div>
+                />
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {isVideoPaused && isPausedByUser && storyPhase !== 'loop' && !showBranchReplay && !isBranchTransitionLoading && (
-          <div data-ui-layer="true" className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-            <button
-              type="button"
-              onClick={handleResumePlayback}
-              className="pointer-events-auto w-16 h-16 rounded-full bg-black/55 border border-white/30 backdrop-blur-xl text-white flex items-center justify-center hover:bg-black/70 active:scale-95 transition-all shadow-[0_12px_30px_rgba(0,0,0,0.45)]"
-              aria-label="Resume playback"
-            >
-              <Play className="w-7 h-7 ml-0.5 fill-current" />
-            </button>
-          </div>
-        )}
+        <PlayerShellCenterOverlay
+          showResumeButton={
+            isVideoPaused &&
+            isPausedByUser &&
+            storyPhase !== 'loop' &&
+            !showBranchReplay &&
+            !isBranchTransitionLoading
+          }
+          onResume={handleResumePlayback}
+          showReplayButton={isBranchPhase && showBranchReplay}
+          replayLabel="Replay"
+          onReplay={handleReplayFromStart}
+        />
 
         {isBranchTransitionLoading && (
           <div data-ui-layer="true" className="absolute inset-0 z-30 flex items-center justify-center bg-black/28 backdrop-blur-[2px] pointer-events-none">

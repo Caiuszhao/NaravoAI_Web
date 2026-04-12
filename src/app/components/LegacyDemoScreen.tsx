@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Heart, Maximize, MessageCircle, MoreHorizontal, Plus, RotateCcw, X } from 'lucide-react';
-import { CUSTOM_LOGO_URL } from './DemoFeed';
+import { X } from 'lucide-react';
 import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
 import { getDemo3PrefetchFilenames } from '../utils/demo3Prefetch';
 import { generateText } from '../utils/generateClient';
@@ -11,6 +10,12 @@ import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../confi
 import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
 import { useDemoDebug } from '../context/DemoDebugContext';
 import { useApiEnv } from '../context/ApiEnvContext';
+import { CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
+import { usePlayerShell } from '../interactive/core/usePlayerShell';
+import { PlayerShellCenterOverlay } from '../interactive/core/PlayerShellCenterOverlay';
+import { DemoEngagementPanel } from '../interactive/engagement/DemoEngagementPanel';
+import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
+import type { DemoCharacterPreview } from '../interactive/types/demo';
 
 const DEMO3_COVER_URL = new URL('../../assets/Demo3-cover.jpg', import.meta.url).href;
 
@@ -160,7 +165,6 @@ export function LegacyDemoScreen({
   const { baseUrl: generateApiBaseUrl } = useApiEnv();
   const prevDemo3ClipRef = useRef<string | null>(null);
   const isDemo3 = demo.id === 3;
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isCharactersOpen, setIsCharactersOpen] = useState(false);
@@ -205,6 +209,7 @@ export function LegacyDemoScreen({
   const [demo3CountdownActive, setDemo3CountdownActive] = useState(false);
   const [demo3HighEmotionHits, setDemo3HighEmotionHits] = useState(0); // count of emotion_type 4/5 hits (cap at 2)
   const [demo3ShowReplay, setDemo3ShowReplay] = useState(false);
+  const [legacyShowReplay, setLegacyShowReplay] = useState(false);
   const [demo3Lead, setDemo3Lead] = useState<0 | 1>(0);
   const [demo3SlotSrc, setDemo3SlotSrc] = useState<[string, string]>(['', '']);
   const [demo3IsLoading, setDemo3IsLoading] = useState(false);
@@ -236,6 +241,53 @@ export function LegacyDemoScreen({
 
   const comments = MOCK_COMMENTS_BY_DEMO[demo.id] ?? [];
   const characters = CHARACTERS_BY_DEMO[demo.id] ?? [];
+  const pauseAllMedia = useCallback(() => {
+    videoRef.current?.pause();
+    demo3Video0Ref.current?.pause();
+    demo3Video1Ref.current?.pause();
+    audioRef.current?.pause();
+    demo3NarrationAudioRef.current?.pause();
+  }, []);
+  const resumeAuxiliaryAudio = useCallback(() => {
+    if (!isActiveRef.current) return;
+    if (isDemo3 && demo3CurrentFilename === 'ep_last.mp4') return;
+    const bgm = audioRef.current;
+    if (bgm && demo.bgmUrl) {
+      bgm.muted = false;
+      bgm.volume = 0.25;
+      void bgm.play().catch(() => undefined);
+    }
+  }, [demo.bgmUrl, isDemo3, demo3CurrentFilename]);
+  const getActiveVideo = () => {
+    if (isDemo3) {
+      return demo3Lead === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+    }
+    return videoRef.current;
+  };
+  const {
+    isFullscreen,
+    isVideoPaused,
+    isPausedByUser,
+    handleToggleFullscreen,
+    handleVideoSurfaceClick,
+    handleResumePlayback,
+    setIsPausedByUser,
+  } = usePlayerShell({
+    isActive,
+    getActiveVideo,
+    bindingKey: isDemo3
+      ? `${demo3Lead}:${demo3CurrentFilename}:${demo3SlotSrc[0]}:${demo3SlotSrc[1]}`
+      : `${activeVideoIndex}:${activeSrc ?? ''}`,
+    canTogglePause: () =>
+      !isCommentsOpen &&
+      !isCharactersOpen &&
+      !(isDemo3 && (demo3PromptActive || demo3ShowReplay || demo3CountdownActive)) &&
+      !(!isDemo3 && legacyShowReplay),
+    onInactivePauseAll: pauseAllMedia,
+    resetUserPausedWhenInactive: true,
+    onBeforePause: pauseAllMedia,
+    onAfterResume: resumeAuxiliaryAudio,
+  });
 
   demo3NarrationUrlUnmountRef.current = demo3NarrationAudioUrl;
   useEffect(() => {
@@ -273,12 +325,12 @@ export function LegacyDemoScreen({
     if (isDemo3) return;
     const video = videoRef.current;
     if (!video) return;
-    if (isActive) {
+    if (isActive && !isPausedByUser && !legacyShowReplay) {
       void video.play().catch(() => undefined);
     } else {
       video.pause();
     }
-  }, [isActive, isDemo3]);
+  }, [isActive, isDemo3, isPausedByUser, legacyShowReplay]);
 
   useEffect(() => {
     if (!isDemo3) return;
@@ -290,10 +342,15 @@ export function LegacyDemoScreen({
       v1.pause();
       return;
     }
+    if (demo3ShowReplay) return;
+    if (isPausedByUser) return;
     const lead = demo3Lead;
     const active = lead === 0 ? v0 : v1;
     const other = lead === 0 ? v1 : v0;
     other.pause();
+    const shouldMuteActiveVideo = !demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4';
+    active.muted = shouldMuteActiveVideo;
+    active.volume = shouldMuteActiveVideo ? 0 : 1;
     const url = demo3SlotSrc[lead];
     if (!url) return;
     const sig = `${lead}|${demo3CurrentFilename}`;
@@ -301,7 +358,7 @@ export function LegacyDemoScreen({
     demo3PlaySigRef.current = sig;
     if (jumped) active.currentTime = 0;
     void active.play().catch(() => undefined);
-  }, [isDemo3, isActive, demo3Lead, demo3CurrentFilename, demo3SlotSrc]);
+  }, [isDemo3, isActive, isPausedByUser, demo3ShowReplay, demo3Lead, demo3CurrentFilename, demo3SlotSrc, demo.playVideoAudio]);
 
   const bgmPlayableSrc = demo.bgmUrl ? (resolvedMediaMap[demo.bgmUrl] ?? demo.bgmUrl) : '';
 
@@ -319,65 +376,67 @@ export function LegacyDemoScreen({
       return;
     }
 
+    if (isPausedByUser) {
+      audio.pause();
+      return;
+    }
+
     // Demo3 ep_last: pause BGM so narration can be heard clearly.
     if (isDemo3 && demo3CurrentFilename === 'ep_last.mp4') {
       audio.pause();
       return;
     }
 
+    let settled = false;
+    let retryTimer: number | null = null;
+    let retryCount = 0;
     const tryStart = () => {
       if (!isActiveRef.current) return;
+      if (isPausedByUser) return;
+      if (settled) return;
       audio.muted = false;
       audio.volume = 0.25;
-      void audio.play().catch(() => undefined);
+      void audio
+        .play()
+        .then(() => {
+          settled = true;
+          if (retryTimer) {
+            window.clearTimeout(retryTimer);
+            retryTimer = null;
+          }
+        })
+        .catch(() => {
+          if (settled || retryCount >= 6) return;
+          retryCount += 1;
+          retryTimer = window.setTimeout(() => {
+            retryTimer = null;
+            tryStart();
+          }, 220);
+        });
     };
 
     tryStart();
 
     const retry = () => tryStart();
+    audio.addEventListener('canplay', retry);
+    audio.addEventListener('loadeddata', retry);
     document.addEventListener('pointerdown', retry, { capture: true });
     document.addEventListener('keydown', retry, { capture: true });
     return () => {
+      if (retryTimer) {
+        window.clearTimeout(retryTimer);
+      }
+      audio.removeEventListener('canplay', retry);
+      audio.removeEventListener('loadeddata', retry);
       document.removeEventListener('pointerdown', retry, { capture: true } as any);
       document.removeEventListener('keydown', retry, { capture: true } as any);
     };
-  }, [isActive, demo.bgmUrl, bgmPlayableSrc, isDemo3, demo3CurrentFilename]);
+  }, [isActive, isPausedByUser, demo.bgmUrl, bgmPlayableSrc, isDemo3, demo3CurrentFilename]);
 
   useEffect(() => {
-    if (!isActive) return;
-    if (isDemo3) {
-      demo3PlaySigRef.current = '';
-      setDemo3Lead(0);
-      setDemo3SlotSrc(['', '']);
-      setDemo3CurrentFilename('index_1.mp4');
-      setDemo3Queue(['ep_2.mp4']);
-      setDemo3PromptActive(false);
-      setDemo3CountdownActive(false);
-      setDemo3CountdownLeft(10);
-      setDemo3HighEmotionHits(0);
-      setDemo3ShowReplay(false);
-      setDemo3IsCoverVisible(true);
-      demo3LastUserReplyRef.current = '';
-      demo3NarrationAbortRef.current?.abort();
-      demo3NarrationAbortRef.current = null;
-      demo3NarrationSigRef.current = '';
-      setDemo3NarrationText('');
-      setDemo3NarrationError(null);
-      setDemo3NarrationLoading(false);
-      setDemo3NarrationAudioUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-      const narEl = demo3NarrationAudioRef.current;
-      if (narEl) {
-        narEl.pause();
-        narEl.removeAttribute('src');
-        void narEl.load();
-      }
-      return;
-    }
-    if (activeVideoIndex === 0) return;
-    setActiveVideoIndex(0);
+    if (isActive) return;
+    setIsCommentsOpen(false);
+    setIsCharactersOpen(false);
   }, [isActive]);
 
   useEffect(() => {
@@ -716,6 +775,9 @@ export function LegacyDemoScreen({
           v0.load();
           await waitForReady(v0, 2500);
           if (token !== demo3ReplayTokenRef.current) return;
+          const shouldMute = !demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4';
+          v0.muted = shouldMute;
+          v0.volume = shouldMute ? 0 : 1;
           void v0.play().catch(() => undefined);
         }
       } catch {
@@ -973,6 +1035,35 @@ export function LegacyDemoScreen({
     demo3NarrationAudioRef.current?.pause();
   }, [isDemo3, demo3ShowReplay]);
 
+  useEffect(() => {
+    if (!isDemo3 || !isActive) return;
+    const activeSlot = demo3Lead;
+    const activeSource = demo3SlotSrc[activeSlot];
+    if (!activeSource) return;
+
+    const activeVideo = activeSlot === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+    if (!activeVideo) return;
+
+    const handleFrameReady = () => {
+      if (activeVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        setDemo3IsCoverVisible(false);
+      }
+    };
+
+    // The clip may already be decodable when this Demo becomes active again,
+    // so don't rely on a future loadeddata event only.
+    handleFrameReady();
+    activeVideo.addEventListener('loadeddata', handleFrameReady);
+    activeVideo.addEventListener('canplay', handleFrameReady);
+    activeVideo.addEventListener('playing', handleFrameReady);
+
+    return () => {
+      activeVideo.removeEventListener('loadeddata', handleFrameReady);
+      activeVideo.removeEventListener('canplay', handleFrameReady);
+      activeVideo.removeEventListener('playing', handleFrameReady);
+    };
+  }, [isDemo3, isActive, demo3Lead, demo3SlotSrc]);
+
   const handleDemo3VideoEnded = (e: SyntheticEvent<HTMLVideoElement>) => {
     const leadEl = demo3Lead === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
     if (e.currentTarget !== leadEl) return;
@@ -1022,24 +1113,18 @@ export function LegacyDemoScreen({
     }
   };
 
-  return (
-    <div className="w-full h-full relative overflow-hidden">
-      {isMenuOpen && <div className="absolute inset-0 z-[60]" onClick={() => setIsMenuOpen(false)} />}
+  const handleLegacyReplayFromStart = () => {
+    setLegacyShowReplay(false);
+    setActiveVideoIndex(0);
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    void video.play().catch(() => undefined);
+  };
 
-      <div className="absolute top-0 left-0 w-full px-5 pt-12 pb-5 z-[70] flex items-center justify-between pointer-events-none">
-        <button
-          onClick={onBackHome}
-          className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white pointer-events-auto hover:bg-black/60 transition-all active:scale-95 relative z-10"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <button
-          onClick={() => setIsMenuOpen((previous) => !previous)}
-          className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white pointer-events-auto hover:bg-black/60 transition-all relative z-10"
-        >
-          <MoreHorizontal className="w-5 h-5" />
-        </button>
-      </div>
+  return (
+    <div className="w-full h-full relative overflow-hidden" onClick={handleVideoSurfaceClick}>
+      <DemoTopBar onBackHome={onBackHome ?? (() => undefined)} hideChrome={isFullscreen} closeOnInactive={!isActive} />
 
       <div className="absolute inset-0 z-0 bg-black">
         {demo.bgmUrl && (
@@ -1100,15 +1185,22 @@ export function LegacyDemoScreen({
             src={activeSrc}
             className="w-full h-full object-cover opacity-85"
             autoPlay={isActive}
-            loop={playlist.length <= 1}
+            loop={false}
             muted={!demo.playVideoAudio}
             playsInline
             preload="auto"
             onEnded={() => {
-              if (playlist.length <= 1) return;
+              if (playlist.length <= 1) {
+                setLegacyShowReplay(true);
+                return;
+              }
               setActiveVideoIndex((previous) => {
                 const next = previous + 1;
-                return next >= playlist.length ? 0 : next;
+                if (next >= playlist.length) {
+                  setLegacyShowReplay(true);
+                  return previous;
+                }
+                return next;
               });
             }}
           />
@@ -1165,19 +1257,6 @@ export function LegacyDemoScreen({
         </>
       )}
 
-      {isDemo3 && demo3ShowReplay && (
-        <div className="absolute inset-0 z-[82] flex items-center justify-center pointer-events-auto px-6 bg-black/40 backdrop-blur-[2px]">
-          <button
-            type="button"
-            onClick={handleDemo3ReplayFromStart}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-white/10 backdrop-blur-xl text-white text-[11px] font-semibold tracking-[0.14em] uppercase border border-white/25 hover:bg-white/16 hover:border-white/35 active:scale-[0.98] transition-all shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Retry
-          </button>
-        </div>
-      )}
-
       {isDemo3 && demo3IsLoading && (
         <div className="absolute inset-0 z-[81] flex items-center justify-center pointer-events-none">
           <div className="w-12 h-12 rounded-full border border-white/20 border-t-white/80 animate-spin" />
@@ -1187,7 +1266,10 @@ export function LegacyDemoScreen({
       {isDemo3 && demo3PromptActive && (
         <>
           {/* Bottom text input overlay */}
-          <div className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-5 pointer-events-auto">
+          <div
+            data-ui-layer="true"
+            className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-5 pointer-events-auto"
+          >
             <div className="mx-auto w-full max-w-[560px] rounded-[18px] border border-white/10 bg-black/55 backdrop-blur-xl p-3 shadow-[0_-20px_45px_rgba(0,0,0,0.45)]">
               <input
                 type="text"
@@ -1207,10 +1289,26 @@ export function LegacyDemoScreen({
         </>
       )}
 
+      <PlayerShellCenterOverlay
+        showResumeButton={isVideoPaused && isPausedByUser && !demo3ShowReplay && !demo3PromptActive && !legacyShowReplay}
+        onResume={() => {
+          setIsPausedByUser(false);
+          handleResumePlayback();
+        }}
+        showReplayButton={isDemo3 ? demo3ShowReplay : legacyShowReplay}
+        replayLabel={isDemo3 ? 'Retry' : 'Replay'}
+        onReplay={isDemo3 ? handleDemo3ReplayFromStart : handleLegacyReplayFromStart}
+      />
+
       <div className="absolute inset-0 flex flex-col justify-end z-10">
         <div className="relative z-10 p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
           <div className="flex flex-col gap-4 w-full pointer-events-auto">
-            <div className="flex flex-col gap-1.5">
+            <div
+              data-ui-layer="true"
+              className={`flex flex-col gap-1.5 transition-opacity duration-300 ${
+                isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+              }`}
+            >
               <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                 {demo.title}
               </h2>
@@ -1219,73 +1317,30 @@ export function LegacyDemoScreen({
               </p>
             </div>
 
-            <div className="w-full mt-2">
-              <div className="flex flex-row items-center justify-between w-full min-w-0">
-                <div className="relative flex flex-col items-center shrink-0">
-                  <div className="w-[30px] h-[30px] rounded-full border-2 border-white overflow-hidden bg-black/50 relative">
-                    <img src={CUSTOM_LOGO_URL} alt="Avatar" className="w-full h-full object-cover animate-ping absolute inset-0" style={{ animationDuration: '3s' }} />
-                    <img src={CUSTOM_LOGO_URL} alt="Avatar" className="w-full h-full object-cover relative z-10" />
-                  </div>
-                  <button className="absolute -bottom-1.5 w-[14px] h-[14px] bg-red-500 rounded-full flex items-center justify-center text-white shadow-sm border border-white hover:bg-red-600 transition-colors z-20">
-                    <Plus className="w-[8px] h-[8px]" strokeWidth={3} />
-                  </button>
-                </div>
-
-                <div className="flex flex-row items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => setIsLiked((previous) => !previous)}
-                    className={`flex items-center justify-center hover:scale-110 active:scale-90 transition-transform ${isLiked ? 'text-red-500' : 'text-white'}`}
-                  >
-                    <Heart className="w-6 h-6 fill-current drop-shadow-md" />
-                  </button>
-                  <span className="text-white font-semibold text-[12px] drop-shadow-md">136.1K</span>
-                </div>
-
-                <div className="flex flex-row items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => {
-                      setIsCharactersOpen(false);
-                      setIsCommentsOpen(true);
-                    }}
-                    className="flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform"
-                  >
-                    <MessageCircle className="w-6 h-6 fill-current drop-shadow-md" style={{ transform: 'scaleX(-1)' }} />
-                  </button>
-                  <span className="text-white font-semibold text-[12px] drop-shadow-md">{demo.commentCount}</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCommentsOpen(false);
-                    setIsCharactersOpen(true);
-                  }}
-                  className="h-7 px-1 rounded-full border border-white/15 bg-black/45 backdrop-blur-lg flex items-center hover:bg-black/60 transition-all z-50 shrink-0"
-                  aria-label="Open cast list"
-                >
-                  <div className="flex items-center">
-                    {characters.slice(0, 2).map((character, index) => (
-                      <div
-                        key={character.id}
-                        className={`w-4.5 h-4.5 rounded-full border border-white/25 overflow-hidden ${index === 0 ? 'ml-0' : '-ml-1'} ${character.unlocked ? 'bg-white/10' : 'bg-white/5'} flex items-center justify-center`}
-                      >
-                        {character.unlocked && character.avatar ? (
-                          <img src={character.avatar} alt={character.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-[8px] text-white/70 font-bold">?</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </button>
-
-                <button
-                  className="flex items-center justify-center text-white/25 hover:text-white hover:scale-110 active:scale-90 transition-all z-50 shrink-0"
-                >
-                  <Maximize className="w-[22px] h-[22px] drop-shadow-md" />
-                </button>
-              </div>
-            </div>
+            <DemoEngagementPanel
+              avatarUrl={CUSTOM_LOGO_URL}
+              isLiked={isLiked}
+              likeCountText="136.1K"
+              commentCountText={demo.commentCount}
+              characters={characters.map((character) => ({
+                id: character.id,
+                name: character.name,
+                unlocked: character.unlocked,
+                avatar: character.avatar,
+              })) as DemoCharacterPreview[]}
+              onToggleLike={() => setIsLiked((previous) => !previous)}
+              onOpenComments={() => {
+                setIsCharactersOpen(false);
+                setIsCommentsOpen(true);
+              }}
+              onOpenCharacters={() => {
+                setIsCommentsOpen(false);
+                setIsCharactersOpen(true);
+              }}
+              onToggleFullscreen={handleToggleFullscreen}
+              hideNonInteractiveUi={isFullscreen}
+              enableFullscreen={true}
+            />
           </div>
         </div>
       </div>

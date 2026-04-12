@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HeroSection } from './components/HeroSection';
 import { DemoPreviewSection } from './components/DemoPreviewSection';
 import { WhyThisFeelsNewSection } from './components/WhyThisFeelsNewSection';
@@ -17,6 +17,8 @@ import { ApiEnvProvider } from './context/ApiEnvContext';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
+  const [isDebugUiVisible, setIsDebugUiVisible] = useState(false);
+  const debugLogoTapCountRef = useRef(0);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -35,6 +37,15 @@ export default function App() {
       body.classList.remove('hide-scrollbar');
     };
   }, [currentPage]);
+
+  const handleLogoClick = () => {
+    if (!appRuntimeConfig.enableDebugPanel) return;
+    debugLogoTapCountRef.current += 1;
+    if (debugLogoTapCountRef.current >= 5) {
+      debugLogoTapCountRef.current = 0;
+      setIsDebugUiVisible((previous) => !previous);
+    }
+  };
 
   useEffect(() => {
     if (currentPage !== 'home') return;
@@ -59,7 +70,7 @@ export default function App() {
         ) : (
           <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-x-hidden">
             <main className="w-full min-h-[100dvh] relative">
-              <HeroSection onTryLiveDemo={() => setCurrentPage('demo')} />
+              <HeroSection onTryLiveDemo={() => setCurrentPage('demo')} onLogoClick={handleLogoClick} />
               <DemoPreviewSection />
               <WhyThisFeelsNewSection />
               <ProductThesisSection />
@@ -67,10 +78,10 @@ export default function App() {
               <WhyItMattersSection />
               <ClosingCTASection />
             </main>
-            {appRuntimeConfig.enableDebugPanel && <GenerateApiTestDialog defaultOpen />}
+            {appRuntimeConfig.enableDebugPanel && isDebugUiVisible && <GenerateApiTestDialog defaultOpen />}
           </div>
         )}
-        {appRuntimeConfig.enableDebugPanel && <DemoDebugPanel />}
+        {appRuntimeConfig.enableDebugPanel && isDebugUiVisible && <DemoDebugPanel />}
       </ApiEnvProvider>
     </DemoDebugProvider>
   );
