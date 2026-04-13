@@ -37,7 +37,7 @@ export function DemoCastDrawer({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 z-[85] bg-black/60"
+            className="absolute inset-0 z-[130] bg-black/60"
             onClick={onClose}
           />
           <motion.div
@@ -45,7 +45,7 @@ export function DemoCastDrawer({
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-0 inset-x-0 z-[90] mx-auto w-full max-w-[640px] rounded-t-[24px] bg-[#111214] border-t border-white/10 shadow-[0_-30px_60px_rgba(0,0,0,0.65)] overflow-hidden"
+            className="absolute bottom-0 inset-x-0 z-[135] mx-auto w-full max-w-[640px] rounded-t-[24px] bg-[#111214] border-t border-white/10 shadow-[0_-30px_60px_rgba(0,0,0,0.65)] overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 pt-2.5 pb-3 border-b border-white/10">
               <div className="flex flex-col">

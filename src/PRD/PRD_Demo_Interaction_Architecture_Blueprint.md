@@ -3,7 +3,7 @@
 ## 1. 文档信息
 - 产品名称：NaravoAI Website
 - 文档名称：Demo 交互能力重构蓝图
-- 文档版本：v0.2（评审稿）
+- 文档版本：v0.3（评审稿）
 - 更新时间：2026-04-12
 - 适用范围：`src/app/components/DemoFeed.tsx`、`src/app/components/LegacyDemoScreen.tsx` 及后续新增 Demo
 
@@ -20,6 +20,7 @@
 ### 3.1 目标
 - 任意 Demo 可复用同一套播放壳层能力：
   - 点击画面暂停/恢复
+  - 长按视频区域 2x 播放（松开恢复 1x）
   - 中央播放按钮样式与位置一致（由壳层统一渲染）
   - Replay 按钮样式与位置一致（由壳层统一渲染）
   - 离屏自动暂停，回屏自动恢复
@@ -28,6 +29,7 @@
 - 任意 Demo 可复用同一套互动外壳能力：
   - 头像区、点赞、评论、角色入口等交互位
   - 顶部导航（返回按钮 + More 菜单）行为一致
+  - Cast 抽屉与 Comments 抽屉结构一致（含评论输入区与提交按钮）
   - 全屏时按策略统一隐藏或降噪
   - 点赞/评论/角色弹层的状态管理与埋点口径一致
 - 任意 Demo 可按配置接入交互策略：
@@ -66,11 +68,26 @@
 - `src/app/interactive/scenarios/`
 - `src/app/interactive/types/`
 
+### 5.3 已落地公共组件（截至今日）
+- `core/usePlayerShell.ts`
+  - 统一暂停/恢复、离屏暂停回屏恢复、长按 2x 播放、播放速率复位。
+- `core/PlayerShellCenterOverlay.tsx`
+  - 统一中心播放按钮与 Replay 按钮。
+- `engagement/DemoTopBar.tsx`
+  - 统一返回按钮与 More 菜单。
+- `engagement/DemoEngagementPanel.tsx`
+  - 统一头像、点赞、评论入口、角色入口、全屏按钮。
+- `engagement/DemoCastDrawer.tsx`
+  - 统一角色卡片、Chat 按钮、锁定态显示。
+- `engagement/DemoCommentsDrawer.tsx`
+  - 统一评论列表、底部输入框、Post 按钮、Reply 入口。
+
 ## 6. 模块边界定义
 ### 6.1 Player Shell（共享）
 职责：
 - 管理 active/inactive 播放状态（离屏暂停、回屏恢复）。
 - 管理“用户主动暂停”与“系统暂停”的区分。
+- 管理长按加速播放（2x）与释放复位（1x）。
 - 管理全屏模式与非核心 UI 的显隐策略。
 - 管理首帧就绪、loading 遮罩、播放按钮 overlay。
 - 管理结束态 Replay overlay（统一样式、统一居中位置、文案可配置）。
@@ -85,9 +102,10 @@
 职责：
 - 渲染并管理头像区、点赞按钮、评论入口、角色入口、底部元信息区。
 - 渲染并管理顶部导航与 More 菜单（开关、点击空白关闭、层级规则）。
-- 管理评论抽屉、角色抽屉等通用弹层状态。
+- 管理评论抽屉、角色抽屉等通用弹层状态（含评论输入区与提交按钮）。
 - 对外暴露统一事件：`onLikeToggle`、`onOpenComments`、`onOpenCast`。
 - 根据 `PlayerShellState` 和 `Scenario UI 配置` 决定显隐（例如全屏时隐藏非核心控件）。
+- 统一层级策略：Engagement Layer 组件高于 Player Shell 交互层，避免被遮挡。
 
 不负责：
 - 视频播放控制和 media ready 状态。
@@ -166,6 +184,7 @@ export type PlayerShellState = {
 ## 8. 共享行为抽象清单（必须复用）
 以下能力统一进 Player Shell，不允许在策略层重复实现：
 - 点击视频面暂停/恢复（可按 node 配置开关）。
+- 长按视频区域进入 2x 播放，释放后恢复 1x。
 - 滑出当前 Demo 自动暂停；滑回恢复到原时间点。
 - 主动暂停时显示中心播放按钮；非主动暂停不显示。
 - Replay 按钮统一由壳层渲染，策略只提供 `showReplay / onReplay / replayLabel`。
@@ -176,8 +195,11 @@ export type PlayerShellState = {
 以下能力统一进 Engagement Layer，不允许散落在各 Demo 页面：
 - 头像区 + 点赞 + 评论 + 角色入口的布局与交互手势。
 - 评论抽屉、角色抽屉的开关和关闭行为。
+- 评论抽屉底部输入框与提交按钮（统一结构）。
+- 角色抽屉内 Chat 按钮与锁定态文案（统一结构）。
 - 全屏状态下的显隐策略（读取 `hideNonInteractiveUiWhenFullscreen`）。
 - 点赞态与计数展示（本地态或外部注入态）。
+- 所有 engagement 弹层层级高于 player shell 交互元素。
 
 ## 9. 策略拆分建议
 ### 9.1 `tap-branch`（Demo1）
@@ -210,6 +232,9 @@ export type PlayerShellState = {
 ### Phase 1.5：抽离 Engagement Layer
 - 把头像、点赞、评论、角色、底部信息区抽到共享组件（建议 `DemoEngagementPanel`）。
 - 把评论抽屉、角色抽屉提炼成可配置子组件。
+- 把顶部导航（返回 + More）统一为 `DemoTopBar`。
+- 把 Cast 抽屉统一为 `DemoCastDrawer`。
+- 把 Comments 抽屉（含输入框/提交按钮）统一为 `DemoCommentsDrawer`。
 - 验证 Demo1、当前 Demo2、当前 Demo3 三者交互入口一致。
 
 ### Phase 2：策略化 Demo1
@@ -239,6 +264,8 @@ export type PlayerShellState = {
 - 暂停播放按钮行为一致。
 - Replay 按钮位置、样式、交互反馈一致（仅文案可配置，例如 `Replay/Retry`）。
 - 三个 Demo 的点赞/评论/角色入口和抽屉行为一致。
+- 三个 Demo 的评论输入区、Post 按钮、角色卡 Chat 按钮行为一致。
+- Engagement Layer 组件不会被 Player Shell 交互层遮挡。
 
 ### 12.2 可扩展性
 - 新增一个 Demo 时，不需要在组件里追加 `if (demo.id === x)`。

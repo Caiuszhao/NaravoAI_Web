@@ -26,14 +26,14 @@ export function DemoTopBar({ onBackHome, hideChrome = false, closeOnInactive = f
       {isMenuOpen && (
         <div
           data-ui-layer="true"
-          className="absolute inset-0 z-[60]"
+          className="absolute inset-0 z-[119]"
           onClick={() => setIsMenuOpen(false)}
         />
       )}
 
       <div
         data-ui-layer="true"
-        className={`absolute top-0 left-0 w-full px-5 pt-12 pb-5 z-[70] flex items-center justify-between pointer-events-none transition-opacity duration-300 ${
+        className={`absolute top-0 left-0 w-full px-5 pt-12 pb-5 z-[120] flex items-center justify-between pointer-events-none transition-opacity duration-300 ${
           hideChrome ? 'opacity-0' : 'opacity-100'
         }`}
       >

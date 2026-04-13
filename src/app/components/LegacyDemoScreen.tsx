@@ -1570,7 +1570,7 @@ export function LegacyDemoScreen({
       />
 
       <div className="absolute inset-0 flex flex-col justify-end z-10">
-        <div className="relative z-10 p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
+        <div className="relative z-[120] p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
           <div className="flex flex-col gap-4 w-full pointer-events-auto">
             <div
               data-ui-layer="true"

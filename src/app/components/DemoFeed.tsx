@@ -1427,7 +1427,7 @@ export function DemoFeed({
 
         <div className="absolute inset-0 flex flex-col justify-between z-10">
           <div className="flex-1 flex items-end">
-            <div data-ui-layer="true" className="relative z-10 p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
+            <div data-ui-layer="true" className="relative z-[120] p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
               <div className="flex flex-col gap-4 w-full pointer-events-auto">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2">
                   <div className={`flex flex-col gap-1.5 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
