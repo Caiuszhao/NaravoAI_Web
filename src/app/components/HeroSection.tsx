@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { motion } from 'motion/react';
 import { Play, ChevronDown, Sparkles, ArrowRight } from 'lucide-react';
 import logoImg from '../../assets/3bf85ad3821c19cb83ca7268914f3d9ba7a2eab8.png';
 import bgVideo from '../../assets/BGVideo_cut.mp4';
 
-export function HeroSection({ onTryLiveDemo }: { onTryLiveDemo?: () => void }) {
+export function HeroSection({
+  onTryLiveDemo,
+  onLogoClick,
+}: {
+  onTryLiveDemo?: () => void;
+  onLogoClick?: () => void;
+}) {
   const [videoReady, setVideoReady] = useState(false);
   const scrollToSection = (sectionId: string) => {
     const targetSection = document.getElementById(sectionId);
@@ -24,6 +30,14 @@ export function HeroSection({ onTryLiveDemo }: { onTryLiveDemo?: () => void }) {
   const handleGetInTouchClick = () => {
     scrollToSection('naravo-closing-cta');
   };
+  const handleLogoClick = () => {
+    onLogoClick?.();
+  };
+  const handleLogoKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onLogoClick?.();
+  };
 
   return (
     <section className="relative h-[100svh] md:h-[100dvh] min-h-[600px] w-full flex flex-col overflow-hidden bg-black">
@@ -33,7 +47,12 @@ export function HeroSection({ onTryLiveDemo }: { onTryLiveDemo?: () => void }) {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: 'easeOut' }}
-          className="flex items-center gap-3"
+          className="flex items-center gap-3 cursor-pointer"
+          role="button"
+          tabIndex={0}
+          aria-label="Toggle debug UI"
+          onClick={handleLogoClick}
+          onKeyDown={handleLogoKeyDown}
         >
           <div className="relative flex items-center justify-center w-7 h-7">
             <img

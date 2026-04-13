@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HeroSection } from './components/HeroSection';
 import { DemoPreviewSection } from './components/DemoPreviewSection';
 import { WhyThisFeelsNewSection } from './components/WhyThisFeelsNewSection';
@@ -9,9 +9,16 @@ import { ClosingCTASection } from './components/ClosingCTASection';
 import { DemoPage } from './components/DemoPage';
 import { STORY1_VIDEOS } from './storyVideos';
 import { preloadVideosWithCache } from './utils/videoPreload';
+import { GenerateApiTestDialog } from './components/GenerateApiTestDialog';
+import { DemoDebugPanel } from './components/DemoDebugPanel';
+import { appRuntimeConfig } from './config/app.config';
+import { DemoDebugProvider } from './context/DemoDebugContext';
+import { ApiEnvProvider } from './context/ApiEnvContext';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
+  const [isDebugUiVisible, setIsDebugUiVisible] = useState(false);
+  const debugLogoTapCountRef = useRef(0);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -31,6 +38,15 @@ export default function App() {
     };
   }, [currentPage]);
 
+  const handleLogoClick = () => {
+    if (!appRuntimeConfig.enableDebugPanel) return;
+    debugLogoTapCountRef.current += 1;
+    if (debugLogoTapCountRef.current >= 5) {
+      debugLogoTapCountRef.current = 0;
+      setIsDebugUiVisible((previous) => !previous);
+    }
+  };
+
   useEffect(() => {
     if (currentPage !== 'home') return;
     return preloadVideosWithCache({
@@ -46,21 +62,27 @@ export default function App() {
     });
   }, [currentPage]);
 
-  if (currentPage === 'demo') {
-    return <DemoPage onBackHome={() => setCurrentPage('home')} />;
-  }
-
   return (
-    <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-x-hidden">
-      <main className="w-full min-h-[100dvh] relative">
-        <HeroSection onTryLiveDemo={() => setCurrentPage('demo')} />
-        <DemoPreviewSection />
-        <WhyThisFeelsNewSection />
-        <ProductThesisSection />
-        <UserExperienceFlowSection />
-        <WhyItMattersSection />
-        <ClosingCTASection />
-      </main>
-    </div>
+    <DemoDebugProvider>
+      <ApiEnvProvider>
+        {currentPage === 'demo' ? (
+          <DemoPage onBackHome={() => setCurrentPage('home')} />
+        ) : (
+          <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-x-hidden">
+            <main className="w-full min-h-[100dvh] relative">
+              <HeroSection onTryLiveDemo={() => setCurrentPage('demo')} onLogoClick={handleLogoClick} />
+              <DemoPreviewSection />
+              <WhyThisFeelsNewSection />
+              <ProductThesisSection />
+              <UserExperienceFlowSection />
+              <WhyItMattersSection />
+              <ClosingCTASection />
+            </main>
+            {appRuntimeConfig.enableDebugPanel && isDebugUiVisible && <GenerateApiTestDialog defaultOpen />}
+          </div>
+        )}
+        {appRuntimeConfig.enableDebugPanel && isDebugUiVisible && <DemoDebugPanel />}
+      </ApiEnvProvider>
+    </DemoDebugProvider>
   );
 }

@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { DemoFeed, DEMOS, CUSTOM_LOGO_URL } from './DemoFeed';
+import { DemoFeed } from './DemoFeed';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Fingerprint, Crosshair, Play } from 'lucide-react';
 import { LegacyDemoScreen } from './LegacyDemoScreen';
+import { DEMOS, CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
+  // Entering the demo page should start Demo 1 playback immediately.
+  const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(true);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const isProgrammaticScrollRef = useRef(false);
-  const scrollSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(min-width: 1024px)').matches;
@@ -18,6 +20,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
   const handleSelectDemo = (nextIndex: number) => {
     const clampedIndex = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+    setHasActivatedDemoPlayback(true);
     setActiveDemoIdx(clampedIndex);
 
     const container = feedContainerRef.current;
@@ -35,25 +38,27 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
     const container = feedContainerRef.current;
     if (!container || isProgrammaticScrollRef.current) return;
 
-    if (scrollSyncTimerRef.current) clearTimeout(scrollSyncTimerRef.current);
-    scrollSyncTimerRef.current = setTimeout(() => {
-      const nextIndex = Math.round(container.scrollTop / container.clientHeight);
-      const clamped = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
-      setActiveDemoIdx(clamped);
-    }, 70);
+    const h = container.clientHeight;
+    if (h <= 0) return;
+    const nextIndex = Math.round(container.scrollTop / h);
+    const clamped = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+    let becameDifferent = false;
+    setActiveDemoIdx((prev) => {
+      if (clamped !== prev) becameDifferent = true;
+      return clamped;
+    });
+    if (becameDifferent) setHasActivatedDemoPlayback(true);
   };
-
-  useEffect(() => {
-    return () => {
-      if (scrollSyncTimerRef.current) {
-        clearTimeout(scrollSyncTimerRef.current);
-      }
-    };
-  }, []);
 
   const renderDemoScreen = (index: number) => {
     if (index === 0) {
-      return <DemoFeed onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
+      return (
+        <DemoFeed
+          onBackHome={onBackHome}
+          isActive={activeDemoIdx === index}
+          shouldAutoStart={hasActivatedDemoPlayback}
+        />
+      );
     }
     return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
   };
