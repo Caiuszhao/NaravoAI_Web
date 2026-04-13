@@ -20,7 +20,7 @@ export function PlayerShellCenterOverlay({
       {showReplayButton && (
         <div
           data-ui-layer="true"
-          className="absolute inset-0 z-[72] flex items-center justify-center pointer-events-none px-6"
+          className="absolute inset-0 z-[95] flex items-center justify-center pointer-events-none px-6"
         >
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 type UsePlayerShellOptions = {
   isActive: boolean;
@@ -21,14 +21,22 @@ export const usePlayerShell = ({
   onBeforePause,
   onAfterResume
 }: UsePlayerShellOptions) => {
+  const LONG_PRESS_DELAY_MS = 220;
+  const FAST_PLAYBACK_RATE = 2;
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isVideoPaused, setIsVideoPaused] = useState(false);
   const [isPausedByUser, setIsPausedByUser] = useState(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressActiveRef = useRef(false);
+  const suppressClickAfterLongPressRef = useRef(false);
 
   useEffect(() => {
     if (isActive) return;
+    const current = getActiveVideo();
+    if (current) current.playbackRate = 1;
     onInactivePauseAll?.();
-    const video = getActiveVideo();
+    const video = current;
     if (video) {
       video.pause();
     }
@@ -37,6 +45,12 @@ export const usePlayerShell = ({
       setIsVideoPaused(false);
     }
   }, [isActive, bindingKey, getActiveVideo, onInactivePauseAll, resetUserPausedWhenInactive]);
+
+  useEffect(() => {
+    const video = getActiveVideo();
+    if (!video) return;
+    video.playbackRate = 1;
+  }, [bindingKey, getActiveVideo]);
 
   useEffect(() => {
     const video = getActiveVideo();
@@ -68,6 +82,10 @@ export const usePlayerShell = ({
       ignoreUiLayer?: boolean;
     } = {}
   ) => {
+    if (suppressClickAfterLongPressRef.current) {
+      suppressClickAfterLongPressRef.current = false;
+      return;
+    }
     if (!isActive) return;
     if (!canTogglePause()) return;
 
@@ -92,6 +110,50 @@ export const usePlayerShell = ({
     setIsPausedByUser(true);
     setIsVideoPaused(true);
     video.pause();
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current === null) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  };
+
+  const handleVideoSurfacePointerDown = (
+    event: ReactPointerEvent<HTMLElement>,
+    {
+      ignoreUiLayer = true,
+    }: {
+      ignoreUiLayer?: boolean;
+    } = {}
+  ) => {
+    if (!isActive) return;
+    if (!canTogglePause()) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const target = event.target as HTMLElement;
+    if (ignoreUiLayer && target.closest('[data-ui-layer="true"]')) return;
+
+    clearLongPressTimer();
+    longPressActiveRef.current = false;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      const video = getActiveVideo();
+      if (!video || video.ended || video.paused) return;
+      video.playbackRate = FAST_PLAYBACK_RATE;
+      longPressActiveRef.current = true;
+    }, LONG_PRESS_DELAY_MS);
+  };
+
+  const handleVideoSurfacePointerEnd = () => {
+    clearLongPressTimer();
+    const video = getActiveVideo();
+    if (video) {
+      video.playbackRate = 1;
+    }
+    if (longPressActiveRef.current) {
+      suppressClickAfterLongPressRef.current = true;
+    }
+    longPressActiveRef.current = false;
   };
 
   const handleResumePlayback = () => {
@@ -121,6 +183,8 @@ export const usePlayerShell = ({
     setIsPausedByUser,
     handleToggleFullscreen,
     handleVideoSurfaceClick,
+    handleVideoSurfacePointerDown,
+    handleVideoSurfacePointerEnd,
     handleResumePlayback,
     resetPauseUiState
   };

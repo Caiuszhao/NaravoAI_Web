@@ -12,6 +12,11 @@ export function DemoTopBar({ onBackHome, hideChrome = false, closeOnInactive = f
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
+    if (!hideChrome) return;
+    setIsMenuOpen(false);
+  }, [hideChrome]);
+
+  useEffect(() => {
     if (!closeOnInactive) return;
     setIsMenuOpen(false);
   }, [closeOnInactive]);

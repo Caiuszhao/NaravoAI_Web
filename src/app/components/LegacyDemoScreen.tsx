@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import SiriWave from 'siriwave';
+import { Heart, Mic, SendHorizontal, X } from 'lucide-react';
 import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
 import { getDemo3PrefetchFilenames } from '../utils/demo3Prefetch';
 import { generateText } from '../utils/generateClient';
@@ -13,11 +14,19 @@ import { useApiEnv } from '../context/ApiEnvContext';
 import { CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
 import { usePlayerShell } from '../interactive/core/usePlayerShell';
 import { PlayerShellCenterOverlay } from '../interactive/core/PlayerShellCenterOverlay';
+import { DemoCastDrawer } from '../interactive/engagement/DemoCastDrawer';
+import { DemoCommentsDrawer } from '../interactive/engagement/DemoCommentsDrawer';
 import { DemoEngagementPanel } from '../interactive/engagement/DemoEngagementPanel';
 import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
 import type { DemoCharacterPreview } from '../interactive/types/demo';
 
 const DEMO3_COVER_URL = new URL('../../assets/Demo3-cover.jpg', import.meta.url).href;
+const DEMO3_PROMPT_COUNTDOWN_SECONDS = 20;
+const DEMO3_PROMPT_TICK_MS = 100;
+const DEMO_PROMPT_PLACEHOLDER_BY_ID: Record<number, string> = {
+  2: 'Send override pattern...',
+  3: 'Say something...',
+};
 
 function safeJson(value: unknown) {
   try {
@@ -54,6 +63,148 @@ function extractEmotionType(payload: unknown): 1 | 2 | 3 | 4 | 5 | null {
   }
 
   return null;
+}
+
+type Demo3InputComposerProps = {
+  value: string;
+  inputPlaceholder: string;
+  isVoiceInputActive: boolean;
+  isSubmitting: boolean;
+  onValueChange: (nextValue: string) => void;
+  onSubmit: () => void;
+  onVoiceInputStart: () => void;
+  onVoiceInputEnd: () => void;
+};
+
+function Demo3InputComposer({
+  value,
+  inputPlaceholder,
+  isVoiceInputActive,
+  isSubmitting,
+  onValueChange,
+  onSubmit,
+  onVoiceInputStart,
+  onVoiceInputEnd,
+}: Demo3InputComposerProps) {
+  const hasTypedText = value.trim().length > 0;
+
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    if (event.shiftKey) return;
+    event.preventDefault();
+    if (isSubmitting) return;
+    onSubmit();
+  };
+
+  const handleButtonClick = () => {
+    if (isSubmitting || !hasTypedText) return;
+    onSubmit();
+  };
+
+  const handleButtonPointerDown = () => {
+    if (isSubmitting || hasTypedText) return;
+    onVoiceInputStart();
+  };
+
+  const handleButtonPointerUp = () => {
+    if (hasTypedText) return;
+    onVoiceInputEnd();
+  };
+
+  const handleButtonPointerLeave = () => {
+    if (hasTypedText) return;
+    onVoiceInputEnd();
+  };
+
+  // SiriWave instance ref
+  const siriWaveContainerRef = useRef<HTMLDivElement>(null);
+  const siriWaveInstanceRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (isVoiceInputActive && !hasTypedText && siriWaveContainerRef.current) {
+      // Clear previous instance if exists
+      if (siriWaveInstanceRef.current) {
+        siriWaveInstanceRef.current.dispose();
+      }
+      
+      // Initialize SiriWave 9 effect
+      const containerWidth = siriWaveContainerRef.current.offsetWidth || 300;
+      siriWaveInstanceRef.current = new SiriWave({
+        container: siriWaveContainerRef.current,
+        width: containerWidth,
+        height: 80, // 增加高度给大振幅留空间
+        style: 'ios9',
+        speed: 0.05,
+        amplitude: 1.6, // 调大振幅
+        autostart: true,
+      });
+    } else {
+      if (siriWaveInstanceRef.current) {
+        siriWaveInstanceRef.current.stop();
+        siriWaveInstanceRef.current.dispose();
+        siriWaveInstanceRef.current = null;
+      }
+    }
+
+    return () => {
+      if (siriWaveInstanceRef.current) {
+        siriWaveInstanceRef.current.dispose();
+        siriWaveInstanceRef.current = null;
+      }
+    };
+  }, [isVoiceInputActive, hasTypedText]);
+
+  return (
+    <div className="mx-auto w-full max-w-[560px] relative">
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+        onKeyDown={handleInputKeyDown}
+        placeholder={inputPlaceholder}
+        className={`w-full h-11 pl-4 pr-14 rounded-full transition-all duration-300 text-[13px] outline-none ${
+          isVoiceInputActive && !hasTypedText 
+            ? 'bg-transparent backdrop-blur-none shadow-none text-transparent caret-white/75 border border-transparent placeholder:text-transparent' 
+            : 'bg-black/55 backdrop-blur-xl shadow-[0_4px_25px_rgba(0,0,0,0.35)] text-white/90 border border-white/25 placeholder:text-white/60'
+        }`}
+      />
+      <AnimatePresence>
+        {isVoiceInputActive && !hasTypedText && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="pointer-events-none absolute left-4 right-14 top-1/2 -translate-y-1/2 h-12 flex items-center justify-center overflow-hidden mix-blend-screen [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]"
+          >
+            <div ref={siriWaveContainerRef} className="w-full flex items-center justify-center translate-y-[2px]" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <button
+        type="button"
+        onClick={handleButtonClick}
+        onPointerDown={handleButtonPointerDown}
+        onPointerUp={handleButtonPointerUp}
+        onPointerCancel={handleButtonPointerUp}
+        onPointerLeave={handleButtonPointerLeave}
+        disabled={isSubmitting}
+        className={`absolute right-1.5 top-1/2 -translate-y-1/2 h-8.5 w-8.5 rounded-full transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center ${
+          hasTypedText
+            ? 'bg-white text-black hover:bg-white/90'
+            : `text-white ${
+                isVoiceInputActive
+                  ? 'bg-white/20 hover:bg-white/25 border border-white/40'
+                  : 'bg-white/10 hover:bg-white/15 border border-white/25'
+              }`
+        }`}
+        aria-label={hasTypedText ? 'Submit text reply' : 'Hold for voice input demo'}
+      >
+        <Mic className={`w-4 h-4 ${hasTypedText ? 'hidden' : 'block'}`} />
+        <SendHorizontal className={`w-4 h-4 ${hasTypedText ? 'block' : 'hidden'}`} />
+      </button>
+    </div>
+  );
 }
 
 type LegacyDemo = {
@@ -201,8 +352,9 @@ export function LegacyDemoScreen({
 
   const [demo3CurrentFilename, setDemo3CurrentFilename] = useState('index_1.mp4');
   const [demo3Queue, setDemo3Queue] = useState<string[]>(['ep_2.mp4']);
-  const [demo3CountdownLeft, setDemo3CountdownLeft] = useState(10);
+  const [demo3CountdownLeft, setDemo3CountdownLeft] = useState(DEMO3_PROMPT_COUNTDOWN_SECONDS);
   const [demo3InputValue, setDemo3InputValue] = useState('');
+  const [demo3VoiceInputActive, setDemo3VoiceInputActive] = useState(false);
   const demo3GenerateAbortRef = useRef<AbortController | null>(null);
   const [isDemo3Generating, setIsDemo3Generating] = useState(false);
   const [demo3PromptActive, setDemo3PromptActive] = useState(false);
@@ -210,6 +362,7 @@ export function LegacyDemoScreen({
   const [demo3HighEmotionHits, setDemo3HighEmotionHits] = useState(0); // count of emotion_type 4/5 hits (cap at 2)
   const [demo3ShowReplay, setDemo3ShowReplay] = useState(false);
   const [legacyShowReplay, setLegacyShowReplay] = useState(false);
+  const legacyReplayPendingRef = useRef(false);
   const [demo3Lead, setDemo3Lead] = useState<0 | 1>(0);
   const [demo3SlotSrc, setDemo3SlotSrc] = useState<[string, string]>(['', '']);
   const [demo3IsLoading, setDemo3IsLoading] = useState(false);
@@ -226,6 +379,8 @@ export function LegacyDemoScreen({
   const demo3NarrationUrlUnmountRef = useRef<string | null>(null);
   const demo3ClipRef = useRef(demo3CurrentFilename);
   const demo3PromptActiveRef = useRef(demo3PromptActive);
+  const demo3InputValueRef = useRef(demo3InputValue);
+  const demo3VoiceInputActiveRef = useRef(demo3VoiceInputActive);
 
   useEffect(() => {
     demo3ClipRef.current = demo3CurrentFilename;
@@ -233,11 +388,26 @@ export function LegacyDemoScreen({
   useEffect(() => {
     demo3PromptActiveRef.current = demo3PromptActive;
   }, [demo3PromptActive]);
+  useEffect(() => {
+    demo3InputValueRef.current = demo3InputValue;
+  }, [demo3InputValue]);
+  useEffect(() => {
+    demo3VoiceInputActiveRef.current = demo3VoiceInputActive;
+  }, [demo3VoiceInputActive]);
 
   const activeDirectSrc = isDemo3
     ? getDemo3ClipUrl(demo3CurrentFilename)
     : playlist[activeVideoIndex] ?? playlist[0] ?? undefined;
   const activeSrc = activeDirectSrc ? (resolvedMediaMap[activeDirectSrc] ?? activeDirectSrc) : undefined;
+  const demoPromptPlaceholder = DEMO_PROMPT_PLACEHOLDER_BY_ID[demo.id] ?? 'Type your reply...';
+  const demo3CountdownProgress = Math.max(
+    0,
+    Math.min(1, demo3CountdownLeft / DEMO3_PROMPT_COUNTDOWN_SECONDS)
+  );
+  const demo3CountdownSecondsLeft = Math.max(0, Math.ceil(demo3CountdownLeft));
+  const demo3CountdownHue = Math.max(0, Math.min(120, demo3CountdownProgress * 120));
+  const demo3CountdownColor = `hsl(${demo3CountdownHue} 95% 55%)`;
+  const demo3CountdownColorSoft = `hsla(${demo3CountdownHue} 95% 65% / 0.85)`;
 
   const comments = MOCK_COMMENTS_BY_DEMO[demo.id] ?? [];
   const characters = CHARACTERS_BY_DEMO[demo.id] ?? [];
@@ -270,6 +440,8 @@ export function LegacyDemoScreen({
     isPausedByUser,
     handleToggleFullscreen,
     handleVideoSurfaceClick,
+    handleVideoSurfacePointerDown,
+    handleVideoSurfacePointerEnd,
     handleResumePlayback,
     setIsPausedByUser,
   } = usePlayerShell({
@@ -281,13 +453,14 @@ export function LegacyDemoScreen({
     canTogglePause: () =>
       !isCommentsOpen &&
       !isCharactersOpen &&
-      !(isDemo3 && (demo3PromptActive || demo3ShowReplay || demo3CountdownActive)) &&
+      !(isDemo3 && (demo3PromptActive || demo3ShowReplay || demo3CountdownActive || demo3CurrentFilename === 'ep_last.mp4')) &&
       !(!isDemo3 && legacyShowReplay),
     onInactivePauseAll: pauseAllMedia,
     resetUserPausedWhenInactive: true,
     onBeforePause: pauseAllMedia,
     onAfterResume: resumeAuxiliaryAudio,
   });
+  const shouldHideNonInteractiveUi = isFullscreen || (isDemo3 && demo3PromptActive);
 
   demo3NarrationUrlUnmountRef.current = demo3NarrationAudioUrl;
   useEffect(() => {
@@ -325,7 +498,7 @@ export function LegacyDemoScreen({
     if (isDemo3) return;
     const video = videoRef.current;
     if (!video) return;
-    if (isActive && !isPausedByUser && !legacyShowReplay) {
+    if (isActive && !isPausedByUser && !legacyShowReplay && !legacyReplayPendingRef.current) {
       void video.play().catch(() => undefined);
     } else {
       video.pause();
@@ -337,12 +510,11 @@ export function LegacyDemoScreen({
     const v0 = demo3Video0Ref.current;
     const v1 = demo3Video1Ref.current;
     if (!v0 || !v1) return;
-    if (!isActive) {
+    if (!isActive || demo3ShowReplay) {
       v0.pause();
       v1.pause();
       return;
     }
-    if (demo3ShowReplay) return;
     if (isPausedByUser) return;
     const lead = demo3Lead;
     const active = lead === 0 ? v0 : v1;
@@ -441,26 +613,30 @@ export function LegacyDemoScreen({
 
   useEffect(() => {
     if (!isDemo3) return;
-    if (!demo3CountdownActive) {
-      setDemo3CountdownLeft(10);
+    if (!isActive || !demo3PromptActive || !demo3CountdownActive) {
+      setDemo3CountdownLeft(DEMO3_PROMPT_COUNTDOWN_SECONDS);
       return;
     }
-    setDemo3CountdownLeft(10);
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      const left = Math.max(0, 10 - elapsed);
-      setDemo3CountdownLeft(left);
-      if (left <= 0) {
-        window.clearInterval(timer);
-      }
-    }, 200);
-    return () => window.clearInterval(timer);
-  }, [isDemo3, demo3CountdownActive]);
 
-  // If prompt is shown and user doesn't input, treat as emotion_type=5.
-  // - With countdown: auto-submit when countdown reaches 0.
-  // - Without countdown: silently auto-submit after 10s if input remains empty.
+    const timer = window.setInterval(() => {
+      setDemo3CountdownLeft((previous) => {
+        if (demo3InputValueRef.current.trim().length > 0 || demo3VoiceInputActiveRef.current) return previous;
+        if (previous <= 0) {
+          window.clearInterval(timer);
+          return 0;
+        }
+        const next = Math.max(0, Number((previous - DEMO3_PROMPT_TICK_MS / 1000).toFixed(1)));
+        if (next <= 0) {
+          window.clearInterval(timer);
+        }
+        return next;
+      });
+    }, DEMO3_PROMPT_TICK_MS);
+
+    return () => window.clearInterval(timer);
+  }, [isDemo3, isActive, demo3PromptActive, demo3CountdownActive]);
+
+  // If prompt is shown and user doesn't submit before countdown ends, auto-submit current input.
   useEffect(() => {
     if (!isDemo3) return;
     if (!isActive) return;
@@ -468,25 +644,15 @@ export function LegacyDemoScreen({
     if (!demo3PromptActive) return;
     if (isDemo3Generating) return;
 
-    if (demo3CountdownActive) {
-      if (demo3CountdownLeft > 0) return;
-      // Countdown ended => auto-submit (empty => emotion_type=5).
-      void submitDemo3Input();
-      return;
-    }
-
-    if (demo3InputValue.trim().length > 0) return;
-    const timer = window.setTimeout(() => {
-      void submitDemo3Input();
-    }, 10000);
-    return () => window.clearTimeout(timer);
+    if (!demo3CountdownActive) return;
+    if (demo3CountdownLeft > 0) return;
+    void submitDemo3Input();
   }, [
     isDemo3,
     isActive,
     demo3PromptActive,
     demo3CountdownActive,
     demo3CountdownLeft,
-    demo3InputValue,
     isDemo3Generating,
     demo3ShowReplay,
   ]);
@@ -556,19 +722,19 @@ export function LegacyDemoScreen({
     });
   }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, demo3Lead, resolvedMediaMap]);
 
-  const demo3StartPrompt = (withCountdown: boolean) => {
+  const demo3StartPrompt = () => {
     setDemo3InputValue('');
+    setDemo3VoiceInputActive(false);
     setDemo3PromptActive(true);
-    setDemo3CountdownActive(withCountdown);
-    if (withCountdown) {
-      setDemo3CountdownLeft(10);
-    }
+    setDemo3CountdownActive(true);
+    setDemo3CountdownLeft(DEMO3_PROMPT_COUNTDOWN_SECONDS);
   };
 
   const demo3StopPrompt = () => {
     setDemo3PromptActive(false);
     setDemo3CountdownActive(false);
-    setDemo3CountdownLeft(10);
+    setDemo3CountdownLeft(DEMO3_PROMPT_COUNTDOWN_SECONDS);
+    setDemo3VoiceInputActive(false);
   };
 
   const demo3GoTo = (filename: string, queue: string[]) => {
@@ -703,8 +869,9 @@ export function LegacyDemoScreen({
     setDemo3ShowReplay(false);
     setDemo3PromptActive(false);
     setDemo3CountdownActive(false);
-    setDemo3CountdownLeft(10);
+    setDemo3CountdownLeft(DEMO3_PROMPT_COUNTDOWN_SECONDS);
     setDemo3InputValue('');
+    setDemo3VoiceInputActive(false);
     setDemo3HighEmotionHits(0);
     demo3LastUserReplyRef.current = '';
     demo3NarrationAbortRef.current?.abort();
@@ -994,17 +1161,17 @@ export function LegacyDemoScreen({
     if (!isActive) return;
 
     if (demo3CurrentFilename === 'ep_2.mp4') {
-      demo3StartPrompt(true);
+      demo3StartPrompt();
       return;
     }
 
     if (demo3CurrentFilename === 'ep_4_4.mp4') {
-      demo3StartPrompt(false);
+      demo3StartPrompt();
       return;
     }
 
     if (demo3CurrentFilename === 'ep_3-4.mp4') {
-      demo3StartPrompt(false);
+      demo3StartPrompt();
       return;
     }
 
@@ -1069,7 +1236,7 @@ export function LegacyDemoScreen({
     if (e.currentTarget !== leadEl) return;
 
     if (demo3CurrentFilename === 'ep4_2.mp4') {
-      demo3StartPrompt(false);
+      demo3StartPrompt();
       return;
     }
     const next = demo3Queue[0];
@@ -1114,17 +1281,69 @@ export function LegacyDemoScreen({
   };
 
   const handleLegacyReplayFromStart = () => {
+    videoRef.current?.pause();
+    legacyReplayPendingRef.current = true;
     setLegacyShowReplay(false);
     setActiveVideoIndex(0);
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = 0;
-    void video.play().catch(() => undefined);
   };
 
+  useEffect(() => {
+    if (isDemo3) return;
+    if (!legacyReplayPendingRef.current) return;
+    if (legacyShowReplay) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const restart = () => {
+      legacyReplayPendingRef.current = false;
+      video.pause();
+      video.playbackRate = 1;
+      video.currentTime = 0;
+      if (!isActiveRef.current) return;
+      void video.play().catch(() => undefined);
+    };
+
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      restart();
+      return;
+    }
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('loadedmetadata', finish);
+      video.removeEventListener('loadeddata', finish);
+      video.removeEventListener('error', finish);
+      window.clearTimeout(timeoutId);
+      restart();
+    };
+    const timeoutId = window.setTimeout(finish, 1500);
+    video.addEventListener('loadedmetadata', finish);
+    video.addEventListener('loadeddata', finish);
+    video.addEventListener('error', finish);
+    return () => {
+      video.removeEventListener('loadedmetadata', finish);
+      video.removeEventListener('loadeddata', finish);
+      video.removeEventListener('error', finish);
+      window.clearTimeout(timeoutId);
+    };
+  }, [isDemo3, legacyShowReplay, activeVideoIndex, activeSrc]);
+
   return (
-    <div className="w-full h-full relative overflow-hidden" onClick={handleVideoSurfaceClick}>
-      <DemoTopBar onBackHome={onBackHome ?? (() => undefined)} hideChrome={isFullscreen} closeOnInactive={!isActive} />
+    <div
+      className="w-full h-full relative overflow-hidden"
+      onClick={handleVideoSurfaceClick}
+      onPointerDown={handleVideoSurfacePointerDown}
+      onPointerUp={handleVideoSurfacePointerEnd}
+      onPointerCancel={handleVideoSurfacePointerEnd}
+      onPointerLeave={handleVideoSurfacePointerEnd}
+    >
+      <DemoTopBar
+        onBackHome={onBackHome ?? (() => undefined)}
+        hideChrome={shouldHideNonInteractiveUi}
+        closeOnInactive={!isActive}
+      />
 
       <div className="absolute inset-0 z-0 bg-black">
         {demo.bgmUrl && (
@@ -1153,7 +1372,7 @@ export function LegacyDemoScreen({
                 demo3Lead === 0 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
               autoPlay={false}
-              loop={false}
+              loop={demo3CurrentFilename === 'ep_last.mp4'}
               muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
               playsInline
               preload="auto"
@@ -1169,7 +1388,7 @@ export function LegacyDemoScreen({
                 demo3Lead === 1 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
               autoPlay={false}
-              loop={false}
+              loop={demo3CurrentFilename === 'ep_last.mp4'}
               muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
               playsInline
               preload="auto"
@@ -1209,9 +1428,19 @@ export function LegacyDemoScreen({
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_10%,rgba(0,0,0,0.55)_100%)]" />
       </div>
 
-      {isDemo3 && demo3CurrentFilename === 'ep_last.mp4' && (
+      {isDemo3 && demo3CurrentFilename === 'ep_last.mp4' && !demo3IsLoading && !demo3ShowReplay && (
         <div className="absolute left-0 right-0 bottom-[5.75rem] z-[75] px-4 pointer-events-none">
-          <div className="mx-auto max-w-[520px] rounded-2xl border border-white/15 bg-black/55 backdrop-blur-xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.42)]">
+          <div className="mx-auto max-w-[520px] rounded-2xl border border-white/15 bg-black/55 backdrop-blur-xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.42)] pointer-events-auto flex flex-col gap-2">
+            <div className="flex justify-end w-full">
+              <button
+                onClick={() => setDemo3ShowReplay(true)}
+                className="p-1 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-colors -mr-1"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
             {demo3NarrationLoading && (
               <p className="text-[11px] tracking-[0.14em] uppercase text-white/70">Generating narration…</p>
             )}
@@ -1219,7 +1448,21 @@ export function LegacyDemoScreen({
               <p className="text-[12px] text-red-200/90">{demo3NarrationError}</p>
             )}
             {demo3NarrationText && (
-              <p className="text-[14px] leading-relaxed text-white/92 whitespace-pre-wrap">{demo3NarrationText}</p>
+              <div className="flex flex-col gap-4 w-full pb-1">
+                <p className="text-[14px] leading-relaxed text-white/92 whitespace-pre-wrap">{demo3NarrationText}</p>
+                <div className="flex items-center justify-between bg-white/5 rounded-xl p-3 border border-white/5 w-full mt-1">
+                  <div className="flex flex-col">
+                    <span className="text-[13px] font-semibold text-white/90">Continue the Story</span>
+                    <span className="text-[11px] text-white/50 mt-0.5">Chat directly with Astronaut</span>
+                  </div>
+                  <button
+                    onClick={() => setIsCharactersOpen(true)}
+                    className="text-[12px] font-medium text-black bg-white hover:bg-white/90 transition-colors px-3.5 py-1.5 rounded-full shadow-sm whitespace-nowrap"
+                  >
+                    Chat Now
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1246,12 +1489,31 @@ export function LegacyDemoScreen({
 
       {isDemo3 && demo3CountdownActive && (
         <>
-          {/* Top 10s countdown overlay (Demo 3, ep_2 only) */}
-          <div className="absolute top-[3.25rem] left-0 right-0 z-[69] px-4 pointer-events-none">
-            <div className="mx-auto w-fit rounded-full border border-white/15 bg-black/45 backdrop-blur-xl px-4 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/80 tabular-nums">
-                {demo3CountdownLeft}s
-              </span>
+          <div className="absolute top-[3.25rem] left-0 right-0 z-[69] px-4 sm:px-5 pointer-events-none">
+            <div className="w-full min-w-0 px-10 sm:px-12 md:px-14">
+              <div className="rounded-full border border-white/15 bg-black/45 backdrop-blur-xl px-3 py-2 flex items-center gap-2 min-w-0">
+                <Heart className="w-3.5 h-3.5 shrink-0" style={{ color: demo3CountdownColorSoft }} />
+                <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-[0.22em] sm:tracking-[0.25em] text-white/75 shrink-0">
+                  Reply
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden w-full">
+                    <div
+                      className="h-full rounded-full shadow-[0_0_10px_rgba(255,255,255,0.35)] transition-all duration-100"
+                      style={{
+                        width: `${Math.max(6, demo3CountdownProgress * 100)}%`,
+                        background: `linear-gradient(90deg, ${demo3CountdownColor}, ${demo3CountdownColorSoft})`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <span className="text-[9px] sm:text-[10px] font-semibold text-white/80 tabular-nums shrink-0">
+                  {demo3CountdownSecondsLeft}s
+                </span>
+              </div>
+              <p className="mt-1.5 text-[9px] sm:text-[10px] tracking-[0.12em] sm:tracking-[0.16em] uppercase text-white/45 text-center leading-tight break-words px-2">
+                Countdown pauses when text is present
+              </p>
             </div>
           </div>
         </>
@@ -1268,23 +1530,30 @@ export function LegacyDemoScreen({
           {/* Bottom text input overlay */}
           <div
             data-ui-layer="true"
-            className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-5 pointer-events-auto"
+            className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-[6.125rem] pointer-events-auto"
           >
-            <div className="mx-auto w-full max-w-[560px] rounded-[18px] border border-white/10 bg-black/55 backdrop-blur-xl p-3 shadow-[0_-20px_45px_rgba(0,0,0,0.45)]">
-              <input
-                type="text"
-                value={demo3InputValue}
-                onChange={(e) => setDemo3InputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  if (e.shiftKey) return;
-                  e.preventDefault();
-                  if (!isDemo3Generating) void submitDemo3Input();
-                }}
-                placeholder="Type your reply..."
-                className="w-full h-11 px-4 rounded-[14px] bg-white/6 border border-white/10 text-[13px] text-white/85 placeholder:text-white/35 outline-none"
-              />
-            </div>
+            <Demo3InputComposer
+              value={demo3InputValue}
+              inputPlaceholder={demoPromptPlaceholder}
+              isVoiceInputActive={demo3VoiceInputActive}
+              isSubmitting={isDemo3Generating}
+              onValueChange={(nextValue) => {
+                setDemo3InputValue(nextValue);
+                if (nextValue.trim().length > 0 && demo3VoiceInputActive) {
+                  setDemo3VoiceInputActive(false);
+                }
+              }}
+              onSubmit={() => {
+                void submitDemo3Input();
+              }}
+              onVoiceInputStart={() => {
+                if (demo3InputValue.trim().length > 0) return;
+                setDemo3VoiceInputActive(true);
+              }}
+              onVoiceInputEnd={() => {
+                setDemo3VoiceInputActive(false);
+              }}
+            />
           </div>
         </>
       )}
@@ -1306,7 +1575,7 @@ export function LegacyDemoScreen({
             <div
               data-ui-layer="true"
               className={`flex flex-col gap-1.5 transition-opacity duration-300 ${
-                isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                shouldHideNonInteractiveUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
               }`}
             >
               <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
@@ -1338,124 +1607,28 @@ export function LegacyDemoScreen({
                 setIsCharactersOpen(true);
               }}
               onToggleFullscreen={handleToggleFullscreen}
-              hideNonInteractiveUi={isFullscreen}
+              hideNonInteractiveUi={shouldHideNonInteractiveUi}
               enableFullscreen={true}
             />
           </div>
         </div>
       </div>
 
-      <AnimatePresence>
-        {isCharactersOpen && (
-          <>
-            <motion.button
-              type="button"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute inset-0 z-[85] bg-black/60"
-              onClick={() => setIsCharactersOpen(false)}
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute bottom-0 inset-x-0 z-[90] mx-auto w-full max-w-[640px] rounded-t-[24px] bg-[#111214] border-t border-white/10 shadow-[0_-30px_60px_rgba(0,0,0,0.65)] overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-4 pt-2.5 pb-3 border-b border-white/10">
-                <span className="text-[13px] font-semibold text-white">Characters</span>
-                <button
-                  type="button"
-                  onClick={() => setIsCharactersOpen(false)}
-                  className="w-8 h-8 rounded-full bg-white/5 border border-white/10 text-white/75 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="max-h-[52vh] overflow-y-auto px-4 py-3 space-y-3">
-                {characters.map((character) => (
-                  <div key={character.id} className={`rounded-2xl border p-3.5 ${character.unlocked ? 'border-white/10 bg-white/[0.03]' : 'border-white/5 bg-white/[0.015]'}`}>
-                    <div className="flex items-start gap-3">
-                      <div className={`w-11 h-11 rounded-full border flex items-center justify-center overflow-hidden ${character.unlocked ? 'border-white/20 bg-white/10' : 'border-white/10 bg-white/5'}`}>
-                        {character.unlocked && character.avatar ? (
-                          <img src={character.avatar} alt={character.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-white/70 text-[16px] font-bold">?</span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[12px] font-semibold ${character.unlocked ? 'text-white/90' : 'text-white/50'}`}>{character.unlocked ? character.name : 'Locked Character'}</span>
-                          <span className={`text-[10px] uppercase tracking-[0.16em] ${character.unlocked ? 'text-white/35' : 'text-white/25'}`}>{character.role}</span>
-                        </div>
-                        <p className={`text-[12px] leading-relaxed mt-1 ${character.unlocked ? 'text-white/70' : 'text-white/40'}`}>
-                          {character.summary}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <DemoCastDrawer
+        isOpen={isCharactersOpen}
+        title="Characters"
+        subtitle={demo.title}
+        characters={characters}
+        onClose={() => setIsCharactersOpen(false)}
+      />
 
-      <AnimatePresence>
-        {isCommentsOpen && (
-          <>
-            <motion.button
-              type="button"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute inset-0 z-[85] bg-black/60"
-              onClick={() => setIsCommentsOpen(false)}
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute bottom-0 inset-x-0 z-[90] mx-auto w-full max-w-[640px] rounded-t-[24px] bg-[#111214] border-t border-white/10 shadow-[0_-30px_60px_rgba(0,0,0,0.65)] overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-4 pt-2.5 pb-3 border-b border-white/10">
-                <span className="text-[13px] font-semibold text-white">{demo.commentCount} comments</span>
-                <button
-                  type="button"
-                  onClick={() => setIsCommentsOpen(false)}
-                  className="w-8 h-8 rounded-full bg-white/5 border border-white/10 text-white/75 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="max-h-[52vh] overflow-y-auto px-4 py-3 space-y-3">
-                {comments.map((comment) => (
-                  <div key={comment.id} className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-white/10 border border-white/10 text-white/85 flex items-center justify-center text-[11px] font-bold">
-                      {comment.name.slice(0, 1)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-white/90 font-semibold">{comment.name}</span>
-                        <span className="text-[10px] text-white/35">{comment.handle}</span>
-                      </div>
-                      <p className="text-[12px] text-white/75 leading-relaxed mt-0.5">{comment.text}</p>
-                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-white/35">
-                        <span>{comment.time}</span>
-                        <span>{comment.likes} likes</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <DemoCommentsDrawer
+        isOpen={isCommentsOpen}
+        title={`${demo.commentCount} comments`}
+        subtitle={demo.title}
+        comments={comments}
+        onClose={() => setIsCommentsOpen(false)}
+      />
     </div>
   );
 }
