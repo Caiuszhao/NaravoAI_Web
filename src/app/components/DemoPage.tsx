@@ -107,7 +107,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
             <div className="relative flex items-center justify-center w-7 h-7">
               <img
                 src={CUSTOM_LOGO_URL}
-                alt="Naravo AI Logo"
+                alt="Narravo AI Logo"
                 className="w-7 h-7 object-contain"
                 style={{ filter: 'invert(1)', borderRadius: '4px' }}
               />
@@ -117,7 +117,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
               className="text-white font-bold tracking-[0.2em] text-[15px] uppercase drop-shadow-lg"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Naravo AI
+              Narravo AI
             </span>
           </div>
 
@@ -266,7 +266,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
             <div className="relative flex items-center justify-center w-6 h-6">
               <img
                 src={CUSTOM_LOGO_URL}
-                alt="Naravo AI Logo"
+                alt="Narravo AI Logo"
                 className="w-6 h-6 object-contain"
                 style={{ filter: 'invert(1)', borderRadius: '3px' }}
               />
@@ -275,11 +275,11 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
               className="text-white/50 font-bold tracking-[0.15em] text-[12px] uppercase"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Naravo AI
+              Narravo AI
             </span>
           </div>
           <p className="text-[11px] text-white/20 text-center sm:text-right">
-            © 2026 Naravo AI · Confidential Investor Demo · All rights reserved
+            © 2026 Narravo AI · Confidential Investor Demo · All rights reserved
           </p>
         </footer>
       </div>

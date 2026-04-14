@@ -112,7 +112,7 @@ export function ProductThesisSection() {
         <div className="text-center mb-14 md:mb-20">
           <h2 className="text-[10px] font-semibold tracking-[0.2em] text-white/50 uppercase mb-4 flex items-center justify-center gap-2">
             <div className="w-1.5 h-1.5 bg-white rounded-full" />
-            Naravo AI Platform Vision
+            Narravo AI Platform Vision
           </h2>
           <h3
             className="text-[1.9rem] md:text-[2.6rem] lg:text-[3rem] leading-[1.1] font-bold tracking-tight text-white mb-4"

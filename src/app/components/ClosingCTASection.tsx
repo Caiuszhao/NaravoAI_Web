@@ -49,7 +49,7 @@ export function ClosingCTASection() {
           transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="text-[15px] md:text-[16px] text-white/45 leading-relaxed font-light mb-12 max-w-[520px]"
         >
-          Join Naravo AI and build the next content format for the short-video generation — where every user is the protagonist.
+          Join Narravo AI and build the next content format for the short-video generation — where every user is the protagonist.
         </motion.p>
 
         {/* CTA Buttons */}
@@ -66,7 +66,7 @@ export function ClosingCTASection() {
               type="button"
               className="relative flex items-center justify-center gap-3 w-full sm:w-auto sm:px-8 py-4 rounded-xl bg-white text-black font-bold text-[15px] hover:bg-white/90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.15)] active:scale-[0.98] whitespace-nowrap"
             >
-              Partner with Naravo AI
+              Partner with Narravo AI
             </button>
           </div>
 
@@ -98,7 +98,7 @@ export function ClosingCTASection() {
             <div className="relative flex items-center justify-center w-6 h-6">
               <img
                 src={logoImg}
-                alt="Naravo AI Logo"
+                alt="Narravo AI Logo"
                 className="w-6 h-6 object-contain"
                 style={{ filter: 'invert(1)', borderRadius: '3px' }}
               />
@@ -107,11 +107,11 @@ export function ClosingCTASection() {
               className="text-white/50 font-bold tracking-[0.15em] text-[12px] uppercase"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Naravo AI
+              Narravo AI
             </span>
           </div>
           <p className="text-[11px] text-white/20 text-center sm:text-right">
-            © 2026 Naravo AI · Confidential Investor Demo · All rights reserved
+            © 2026 Narravo AI · Confidential Investor Demo · All rights reserved
           </p>
         </div>
       </div>
