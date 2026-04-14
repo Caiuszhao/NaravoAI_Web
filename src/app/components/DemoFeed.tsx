@@ -13,6 +13,8 @@ import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
 import type { DemoCharacterPreview } from '../interactive/types/demo';
 
 const DEMO1_COVER_URL = new URL('../../assets/Demo1-cover.jpg', import.meta.url).href;
+const RHEA_VOSS_AVATAR_URL = new URL('../../assets/Rhea_Voss.jpg', import.meta.url).href;
+const HORRO_LATCHER_AVATAR_URL = new URL('../../assets/Horro_Latcher.jpg', import.meta.url).href;
 
 const STORY_INTRO_VIDEO = STORY1_VIDEOS.intro;
 const STORY_LOOP_VIDEO = STORY1_VIDEOS.loop;
@@ -78,19 +80,21 @@ const CHARACTERS_BY_DEMO: Record<number, Array<{
   1: [
     {
       id: 1,
-      name: 'Rhea',
-      role: 'Combat Partner',
-      summary: 'A hardened survivor who fights first and trusts later. She keeps moving even when the odds collapse.',
+      name: 'Rhea Voss',
+      role: 'Breacher and Evac Escort',
+      summary:
+        'A wasteland breacher and evacuation escort. She speaks short, hard, and rarely explains. She does not comfort, she gives orders. Trust is earned through performance, never assumed. She hates hesitation, dropped execution, and "wait a little longer." Doorways, countdowns, missed grabs, and turn-back rescues trigger the old sealed-door trauma and make her harsher. Her words cut, but in real danger she always moves to save people first. Once she recognizes you, you stop being dead weight and become someone she will turn back for.',
       unlocked: true,
-      avatar: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200',
+      avatar: RHEA_VOSS_AVATAR_URL,
     },
     {
       id: 2,
-      name: 'Unit-7',
-      role: 'Recon Android',
-      summary: 'A field robot built for breach routes and threat scanning. Its mission data may reveal why the shelter was sealed.',
+      name: 'Horro Latcher',
+      role: 'Gate Interceptor Infected',
+      summary:
+        'An infected variant that retains a doorway interception instinct. It specializes in lunging for an arm at the final second before survivors enter a safe zone, often causing a bite. It is not the most violent unit in the horde, but often the most lethal one, because it turns "almost made it" into "injured, or dead."',
       unlocked: true,
-      avatar: 'https://images.unsplash.com/photo-1535378917042-10a22c95931a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200',
+      avatar: HORRO_LATCHER_AVATAR_URL,
     },
     {
       id: 3,

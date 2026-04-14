@@ -21,6 +21,7 @@ import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
 import type { DemoCharacterPreview } from '../interactive/types/demo';
 
 const DEMO3_COVER_URL = new URL('../../assets/Demo3-cover.jpg', import.meta.url).href;
+const ADRIAN_VALE_AVATAR_URL = new URL('../../assets/Adrian_Vale.jpg', import.meta.url).href;
 const DEMO3_PROMPT_COUNTDOWN_SECONDS = 20;
 const DEMO3_PROMPT_TICK_MS = 100;
 const DEMO_PROMPT_PLACEHOLDER_BY_ID: Record<number, string> = {
@@ -279,25 +280,18 @@ const CHARACTERS_BY_DEMO: Record<number, LegacyCharacter[]> = {
   3: [
     {
       id: 1,
-      name: 'Elias Ward',
-      role: 'Lone Astronaut',
-      summary: 'An isolated engineer on a failing station with one final repair window.',
+      name: 'Adrian Vale',
+      role: 'Crewed Spacecraft Systems Maintenance Specialist, 34',
+      summary:
+        'Mature, restrained, and relentlessly reliable under extreme pressure. He fixes what breaks instead of performing emotion, stays fiercely loyal to the few people who matter, and remembers practical daily details over empty lines. When emotion spikes, his speech turns short with pauses, self-interruptions, and repeated words. His deepest fear is not death, but being seen by someone important at his most out-of-control and helpless.',
       unlocked: true,
-      avatar: 'https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200',
+      avatar: ADRIAN_VALE_AVATAR_URL,
     },
     {
       id: 2,
-      name: 'Ghost Relay',
-      role: 'Signal Trace',
-      summary: 'Intermittent command-channel echoes that may or may not be authentic.',
-      unlocked: true,
-      avatar: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200',
-    },
-    {
-      id: 3,
-      name: 'Orbit Passenger',
+      name: 'Unknown Contact',
       role: 'Locked Character',
-      summary: 'Keep watching to unlock this character profile.',
+      summary: 'Classified profile. This cast slot will unlock as the story introduces new characters.',
       unlocked: false,
     },
   ],
