@@ -1,3 +1,24 @@
+## 2026-04-14 变更补录（指定区间）
+
+### Range
+- `c8467410fdc16778571551e0dbb9fa300723eb59..e556367b4afa73d1c96f5d6b5b7b25fe69e7d3b1`（包含起点提交 `opt cover img size`）
+
+### Summary
+- 对封面图资源进行体积优化，目标是降低加载开销并改善首屏体验。
+- 统一品牌拼写（`naravo` → `narravo`），减少文案/命名不一致带来的展示与认知问题。
+- 更新 cast 相关内容，补齐演示页面的角色信息展示。
+
+### Commits
+- c846741 `opt cover img size` (Caiuszhao)
+- 660fd09 `correct naravo to narravo` (Caiuszhao)
+- e556367 `update cast` (Caiuszhao)
+
+### Files Changed
+- 当前条目基于 `.git/logs/HEAD` 生成，未执行 `git diff --name-status`，文件级清单待补录。
+
+---
+
+
 ## 2026-04-13 18:30 (main merge)
 
 ### Summary
@@ -74,3 +95,24 @@
   - A/D `dist/assets/index-*.js`, `dist/assets/index-*.css`（构建产物哈希变更）
 
 ---
+
+## 2026-04-14 变更补录（指定区间）
+
+### Range
+- `c8467410fdc16778571551e0dbb9fa300723eb59..e556367b4afa73d1c96f5d6b5b7b25fe69e7d3b1`（包含起点提交 `opt cover img size`）
+
+### Summary
+- 对封面图资源进行体积优化，目标是降低加载开销并改善首屏体验。
+- 统一品牌拼写（`naravo` → `narravo`），减少文案/命名不一致带来的展示与认知问题。
+- 更新 cast 相关内容，补齐演示页面的角色信息展示。
+
+### Commits
+- c846741 `opt cover img size` (Caiuszhao)
+- 660fd09 `correct naravo to narravo` (Caiuszhao)
+- e556367 `update cast` (Caiuszhao)
+
+### Files Changed
+- 当前条目基于 `.git/logs/HEAD` 生成，未执行 `git diff --name-status`，文件级清单待补录。
+
+---
+
