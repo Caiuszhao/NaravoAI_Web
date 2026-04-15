@@ -11,10 +11,11 @@ export const appRuntimeConfig = {
    * - `production` → `DEFAULT_GENERATE_API_BASE_URL`（线上）
    * - `test` → `LOCAL_GENERATE_API_BASE_URL`（本机，如 127.0.0.1:8000）
    */
-  defaultApiEnvironment: 'production' satisfies ApiEnvironmentMode,
+  defaultApiEnvironment: 'test' satisfies ApiEnvironmentMode,
 
   /** 是否显示调试 UI：左下角 Debug 面板 + 首页 API 测试浮层 */
   enableDebugPanel: true,
 } as const;
 
 export type AppRuntimeConfig = typeof appRuntimeConfig;
+

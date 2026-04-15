@@ -9,6 +9,8 @@ import { createMp3ObjectUrl, postPrompt, postPromptTts } from '../utils/promptTt
 import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
 import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
 import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
+import { postAsrVoiceInputGenerate, extractAsrText } from '../utils/asrVoiceInputClient';
+import { arrayBufferToBase64, concatFloat32, encodeWav16Mono, resampleMonoLinear } from '../utils/audioWav';
 import { useDemoDebug } from '../context/DemoDebugContext';
 import { useApiEnv } from '../context/ApiEnvContext';
 import { CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
@@ -349,6 +351,8 @@ export function LegacyDemoScreen({
   const [demo3CountdownLeft, setDemo3CountdownLeft] = useState(DEMO3_PROMPT_COUNTDOWN_SECONDS);
   const [demo3InputValue, setDemo3InputValue] = useState('');
   const [demo3VoiceInputActive, setDemo3VoiceInputActive] = useState(false);
+  const [demo3VoiceInputSubmitting, setDemo3VoiceInputSubmitting] = useState(false);
+  const [demo3VoicePermissionChecking, setDemo3VoicePermissionChecking] = useState(false);
   const demo3GenerateAbortRef = useRef<AbortController | null>(null);
   const [isDemo3Generating, setIsDemo3Generating] = useState(false);
   const [demo3PromptActive, setDemo3PromptActive] = useState(false);
@@ -375,6 +379,13 @@ export function LegacyDemoScreen({
   const demo3PromptActiveRef = useRef(demo3PromptActive);
   const demo3InputValueRef = useRef(demo3InputValue);
   const demo3VoiceInputActiveRef = useRef(demo3VoiceInputActive);
+  const demo3VoiceCaptureAbortRef = useRef<AbortController | null>(null);
+  const demo3VoiceStreamRef = useRef<MediaStream | null>(null);
+  const demo3VoiceAudioCtxRef = useRef<AudioContext | null>(null);
+  const demo3VoiceProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const demo3VoiceChunksRef = useRef<Float32Array[]>([]);
+  const demo3VoiceSampleRateRef = useRef<number>(48000);
+  const demo3VoicePointerDownRef = useRef(false);
 
   useEffect(() => {
     demo3ClipRef.current = demo3CurrentFilename;
@@ -388,6 +399,72 @@ export function LegacyDemoScreen({
   useEffect(() => {
     demo3VoiceInputActiveRef.current = demo3VoiceInputActive;
   }, [demo3VoiceInputActive]);
+
+  const ensureMicPermission = useCallback(async () => {
+    // If Permissions API exists and already granted, skip prompting.
+    try {
+      const perms: any = (navigator as any).permissions;
+      if (perms?.query) {
+        const status = await perms.query({ name: 'microphone' as any });
+        if (status?.state === 'granted') return true;
+      }
+    } catch {
+      // ignore
+    }
+
+    const navAny = navigator as any;
+    const getUserMedia: undefined | ((c: MediaStreamConstraints) => Promise<MediaStream>) =
+      navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices) ?? navAny.getUserMedia?.bind(navigator);
+
+    if (!getUserMedia) {
+      const secureHint =
+        typeof window !== 'undefined' && window.location
+          ? `Current origin: ${window.location.origin} (need https or http://localhost)`
+          : 'Need https or http://localhost';
+      throw new Error(`getUserMedia is unavailable. ${secureHint}`);
+    }
+
+    // Prompt permission by requesting audio once, then immediately stop.
+    const s = await getUserMedia({ audio: true });
+    for (const t of s.getTracks()) t.stop();
+    return true;
+  }, []);
+
+  const stopDemo3VoiceCapture = useCallback(async () => {
+    const proc = demo3VoiceProcessorRef.current;
+    if (proc) {
+      try {
+        proc.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    demo3VoiceProcessorRef.current = null;
+
+    const ctx = demo3VoiceAudioCtxRef.current;
+    demo3VoiceAudioCtxRef.current = null;
+    if (ctx) {
+      try {
+        await ctx.close();
+      } catch {
+        // ignore
+      }
+    }
+
+    const stream = demo3VoiceStreamRef.current;
+    demo3VoiceStreamRef.current = null;
+    if (stream) {
+      for (const t of stream.getTracks()) t.stop();
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      demo3VoiceCaptureAbortRef.current?.abort();
+      demo3VoiceCaptureAbortRef.current = null;
+      void stopDemo3VoiceCapture();
+    };
+  }, [stopDemo3VoiceCapture]);
 
   const activeDirectSrc = isDemo3
     ? getDemo3ClipUrl(demo3CurrentFilename)
@@ -412,6 +489,15 @@ export function LegacyDemoScreen({
     audioRef.current?.pause();
     demo3NarrationAudioRef.current?.pause();
   }, []);
+
+  const flushDemo3VoiceCapture = useCallback(async () => {
+    demo3VoiceCaptureAbortRef.current?.abort();
+    demo3VoiceCaptureAbortRef.current = null;
+    demo3VoiceChunksRef.current = [];
+    await stopDemo3VoiceCapture();
+    setDemo3VoiceInputActive(false);
+    setDemo3VoiceInputSubmitting(false);
+  }, [stopDemo3VoiceCapture]);
   const resumeAuxiliaryAudio = useCallback(() => {
     if (!isActiveRef.current) return;
     if (isDemo3 && demo3CurrentFilename === 'ep_last.mp4') return;
@@ -603,6 +689,7 @@ export function LegacyDemoScreen({
     if (isActive) return;
     setIsCommentsOpen(false);
     setIsCharactersOpen(false);
+    void flushDemo3VoiceCapture();
   }, [isActive]);
 
   useEffect(() => {
@@ -1530,7 +1617,7 @@ export function LegacyDemoScreen({
               value={demo3InputValue}
               inputPlaceholder={demoPromptPlaceholder}
               isVoiceInputActive={demo3VoiceInputActive}
-              isSubmitting={isDemo3Generating}
+              isSubmitting={isDemo3Generating || demo3VoiceInputSubmitting}
               onValueChange={(nextValue) => {
                 setDemo3InputValue(nextValue);
                 if (nextValue.trim().length > 0 && demo3VoiceInputActive) {
@@ -1542,10 +1629,141 @@ export function LegacyDemoScreen({
               }}
               onVoiceInputStart={() => {
                 if (demo3InputValue.trim().length > 0) return;
+                if (demo3VoiceInputSubmitting) return;
+                demo3VoicePointerDownRef.current = true;
                 setDemo3VoiceInputActive(true);
+                demo3VoiceChunksRef.current = [];
+                demo3VoiceCaptureAbortRef.current?.abort();
+                const controller = new AbortController();
+                demo3VoiceCaptureAbortRef.current = controller;
+
+                void (async () => {
+                  try {
+                    setDemo3VoicePermissionChecking(true);
+                    await ensureMicPermission();
+                    if (!demo3VoicePointerDownRef.current) {
+                      setDemo3VoicePermissionChecking(false);
+                      setDemo3VoiceInputActive(false);
+                      return;
+                    }
+                    setDemo3VoicePermissionChecking(false);
+
+                    const navAny = navigator as any;
+                    const getUserMedia: undefined | ((c: MediaStreamConstraints) => Promise<MediaStream>) =
+                      navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices) ??
+                      navAny.getUserMedia?.bind(navigator);
+                    if (!getUserMedia) {
+                      const secureHint =
+                        typeof window !== 'undefined' && window.location
+                          ? `Current origin: ${window.location.origin} (need https or http://localhost)`
+                          : 'Need https or http://localhost';
+                      throw new Error(`getUserMedia is unavailable. ${secureHint}`);
+                    }
+
+                    const stream = await getUserMedia({ audio: true });
+                    if (controller.signal.aborted) {
+                      for (const t of stream.getTracks()) t.stop();
+                      return;
+                    }
+                    demo3VoiceStreamRef.current = stream;
+
+                    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                    demo3VoiceAudioCtxRef.current = ctx;
+                    demo3VoiceSampleRateRef.current = ctx.sampleRate;
+
+                    const source = ctx.createMediaStreamSource(stream);
+                    const proc = ctx.createScriptProcessor(4096, 1, 1);
+                    demo3VoiceProcessorRef.current = proc;
+                    proc.onaudioprocess = (event) => {
+                      if (!demo3VoiceInputActiveRef.current) return;
+                      const ch = event.inputBuffer.getChannelData(0);
+                      demo3VoiceChunksRef.current.push(new Float32Array(ch));
+                    };
+                    source.connect(proc);
+                    proc.connect(ctx.destination);
+                  } catch (e) {
+                    setDemo3VoicePermissionChecking(false);
+                    setDemo3VoiceInputActive(false);
+                    pushDebug({
+                      kind: 'api_error',
+                      title: 'Voice capture start failed (Demo3)',
+                      body: e instanceof Error ? e.message : safeJson(e),
+                    });
+                    await flushDemo3VoiceCapture();
+                  }
+                })();
               }}
               onVoiceInputEnd={() => {
+                demo3VoicePointerDownRef.current = false;
+                if (!demo3VoiceInputActiveRef.current) return;
                 setDemo3VoiceInputActive(false);
+                setDemo3VoiceInputSubmitting(true);
+                demo3VoiceCaptureAbortRef.current?.abort();
+                demo3VoiceCaptureAbortRef.current = null;
+
+                void (async () => {
+                  try {
+                    const chunks = demo3VoiceChunksRef.current;
+                    const inputRate = demo3VoiceSampleRateRef.current || 48000;
+                    await stopDemo3VoiceCapture();
+
+                    const pcm = concatFloat32(chunks);
+                    if (pcm.length < inputRate * 0.25) {
+                      throw new Error('Voice input too short');
+                    }
+
+                    const pcm16k = resampleMonoLinear(pcm, inputRate, 16000);
+                    const wav = encodeWav16Mono(pcm16k, 16000);
+                    // Ensure we pass a real ArrayBuffer (not SharedArrayBuffer typing).
+                    const speechB64 = await arrayBufferToBase64(wav.buffer.slice(0) as ArrayBuffer);
+
+                    const body = {
+                      format: 'wav',
+                      rate: 16000,
+                      channel: 1,
+                      cuid: 'naravo_web',
+                      dev_pid: 1737,
+                      speech: speechB64,
+                      len: wav.byteLength,
+                    };
+
+                    pushDebug({
+                      kind: 'api_request',
+                      title: 'POST /api/v1/asr/voice-input-generate (Demo3)',
+                      body: safeJson({ ...body, speech: `base64(${speechB64.length} chars)` }),
+                    });
+
+                    const res = await postAsrVoiceInputGenerate(body, { baseUrl: generateApiBaseUrl });
+                    const asrText = extractAsrText(res) ?? '';
+
+                    if (asrText) {
+                      demo3LastUserReplyRef.current = asrText;
+                      setDemo3InputValue(asrText);
+                    }
+
+                    const emotionType = extractEmotionType(res) ?? 5;
+                    pushDebug({
+                      kind: 'api_response',
+                      title: 'ASR voice-input-generate OK (Demo3)',
+                      body: `${safeJson(res)}\nASR: ${asrText || '(empty)'}\nresolved emotion_type: ${emotionType}`,
+                    });
+
+                    // Match submit behavior: count high emotions and proceed immediately.
+                    const isHighEmotion = emotionType === 4 || emotionType === 5;
+                    if (isHighEmotion) setDemo3HighEmotionHits((h) => h + 1);
+                    demo3StopPrompt();
+                    applyDemo3EmotionAtCurrentClipRef.current(demo3ClipRef.current, emotionType);
+                  } catch (e) {
+                    pushDebug({
+                      kind: 'api_error',
+                      title: 'ASR voice-input-generate failed (Demo3)',
+                      body: e instanceof Error ? e.message : safeJson(e),
+                    });
+                  } finally {
+                    demo3VoiceChunksRef.current = [];
+                    setDemo3VoiceInputSubmitting(false);
+                  }
+                })();
               }}
             />
           </div>
