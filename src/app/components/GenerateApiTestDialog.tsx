@@ -905,6 +905,23 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
                     <button
                       type="button"
                       disabled={busy || voiceSubmitting || voicePermissionChecking || !voiceMicReady}
+                      onTouchStart={(e) => {
+                        // Mobile Safari sometimes doesn't reliably fire pointer events for press-and-hold.
+                        // Use touch events as a fallback so "release" always submits.
+                        e.preventDefault();
+                        voicePointerDownRef.current = true;
+                        startVoiceInput();
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        voicePointerDownRef.current = false;
+                        stopAndSubmitVoiceInput();
+                      }}
+                      onTouchCancel={(e) => {
+                        e.preventDefault();
+                        voicePointerDownRef.current = false;
+                        stopAndSubmitVoiceInput();
+                      }}
                       onPointerDown={() => {
                         voicePointerDownRef.current = true;
                         startVoiceInput();
@@ -923,7 +940,7 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
                       }}
                       className={`w-full h-10 rounded-md border border-white/15 text-[12px] font-semibold tracking-wide transition-colors ${
                         voiceRecording ? 'bg-white/15 text-white' : 'bg-transparent text-white/80 hover:bg-white/10'
-                      } disabled:opacity-60 disabled:cursor-not-allowed`}
+                      } disabled:opacity-60 disabled:cursor-not-allowed touch-none select-none`}
                     >
                       {voiceSubmitting
                         ? 'Submitting…'

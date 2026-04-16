@@ -11,10 +11,12 @@ export type GenerateResponse = {
 };
 
 /** 线上（生产）网关 */
-export const DEFAULT_GENERATE_API_BASE_URL = 'http://101.42.45.113:8000';
+export const DEFAULT_GENERATE_API_BASE_URL = 'https://101.42.45.113:8000';
 
 /** 本地测试网关 */
-export const LOCAL_GENERATE_API_BASE_URL = 'http://127.0.0.1:8000';
+// Use same-origin `/api/...` in dev to avoid mobile HTTPS mixed-content,
+// CORS preflight issues, and backend self-signed cert problems.
+export const LOCAL_GENERATE_API_BASE_URL = '';
 
 export async function generateText(
   input: GenerateRequest,

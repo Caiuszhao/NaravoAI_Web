@@ -21,10 +21,10 @@ export type VoiceInputGenerateRequest = BaiduShortAsrRequest & {
 
 type JsonErrorBody = {
   error_code?: string;
-  message?: string;
+  message?: unknown;
   ok?: boolean;
-  detail?: string;
-  error?: string;
+  detail?: unknown;
+  error?: unknown;
 };
 
 function normalizeBase(baseUrl: string) {
@@ -39,7 +39,15 @@ async function readHttpErrorDetail(response: Response, maxLen = 800): Promise<st
       try {
         const j = JSON.parse(text) as JsonErrorBody;
         const msg = j.detail ?? j.message ?? j.error ?? j.error_code;
-        if (msg) return String(msg);
+        if (typeof msg === 'string') return msg;
+        if (typeof msg === 'number' || typeof msg === 'boolean') return String(msg);
+        if (msg) {
+          try {
+            return JSON.stringify(msg);
+          } catch {
+            return String(msg);
+          }
+        }
       } catch {
         // fall through to snippet
       }
