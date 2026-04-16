@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useRef, useState } from 'react';
 import { ChevronRight, Flame, Mic, Settings, Sparkles, Star, Trophy, Waves, Zap } from 'lucide-react';
 import { CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
 
@@ -81,6 +82,26 @@ const RECENT_MILESTONES = [
 ];
 
 export function ProfileTab() {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    cardRef.current.style.setProperty('--mouse-x', `${x}px`);
+    cardRef.current.style.setProperty('--mouse-y', `${y}px`);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = e.touches[0].clientX - rect.left;
+    const y = e.touches[0].clientY - rect.top;
+    cardRef.current.style.setProperty('--mouse-x', `${x}px`);
+    cardRef.current.style.setProperty('--mouse-y', `${y}px`);
+  };
+
   return (
     <div className="w-full h-full bg-[#020202] text-white pt-10 pb-28 overflow-y-auto hide-scrollbar">
       {/* Top Header / Settings */}
@@ -92,12 +113,24 @@ export function ProfileTab() {
 
       <div className="px-3 sm:px-4 space-y-3.5">
         <motion.section
+          ref={cardRef}
+          onMouseMove={handleMouseMove}
+          onTouchMove={handleTouchMove}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] overflow-hidden"
+          className="relative rounded-[1.25rem] border border-white/8 bg-white/[0.03] overflow-hidden group"
         >
-          <div className="relative p-5 bg-gradient-to-br from-white/[0.06] via-white/[0.02] to-transparent">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_38%)] pointer-events-none" />
+          {/* Dynamic mouse glow layer */}
+          <div
+            className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity duration-300 z-0"
+            style={{
+              background: 'radial-gradient(350px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.08), transparent 40%)',
+            }}
+          />
+
+          <div className="relative z-10 p-5 bg-gradient-to-br from-white/[0.04] via-transparent to-transparent">
+            {/* Subtle fixed gradient just for baseline depth */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.06),transparent_38%)] pointer-events-none" />
             
             <div className="relative flex flex-col gap-4">
               {/* Header: Avatar & Name */}
