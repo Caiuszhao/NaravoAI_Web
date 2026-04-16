@@ -1,4 +1,4 @@
-import { Heart, Maximize, MessageCircle, Plus } from 'lucide-react';
+import { Heart, Maximize, MessageCircle, ListVideo } from 'lucide-react';
 import type { DemoCharacterPreview } from '../types/demo';
 
 type DemoEngagementPanelProps = {
@@ -10,6 +10,7 @@ type DemoEngagementPanelProps = {
   onToggleLike: () => void;
   onOpenComments: () => void;
   onOpenCharacters: () => void;
+  onOpenEpisodes?: () => void;
   onToggleFullscreen?: () => void;
   hideNonInteractiveUi?: boolean;
   enableFullscreen?: boolean;
@@ -24,6 +25,7 @@ export function DemoEngagementPanel({
   onToggleLike,
   onOpenComments,
   onOpenCharacters,
+  onOpenEpisodes,
   onToggleFullscreen,
   hideNonInteractiveUi = false,
   enableFullscreen = true,
@@ -33,21 +35,16 @@ export function DemoEngagementPanel({
       <div className="flex flex-row items-center justify-between w-full min-w-0">
         <div
           data-ui-layer="true"
-          className={`relative flex flex-col items-center shrink-0 transition-opacity duration-300 ${
+          className={`flex flex-row items-center shrink-0 transition-opacity duration-300 ${
             hideNonInteractiveUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
         >
-          <div className="w-[30px] h-[30px] rounded-full border-2 border-white overflow-hidden bg-black/50 relative">
-            <img
-              src={avatarUrl}
-              alt="Avatar"
-              className="w-full h-full object-cover animate-ping absolute inset-0"
-              style={{ animationDuration: '3s' }}
-            />
-            <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover relative z-10" />
-          </div>
-          <button className="absolute -bottom-1.5 w-[14px] h-[14px] bg-red-500 rounded-full flex items-center justify-center text-white shadow-sm border border-white hover:bg-red-600 transition-colors z-20">
-            <Plus className="w-[8px] h-[8px]" strokeWidth={3} />
+          <button
+            type="button"
+            onClick={onOpenEpisodes}
+            className="flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform"
+          >
+            <ListVideo className="w-6 h-6 drop-shadow-md" strokeWidth={2} />
           </button>
         </div>
 

@@ -4,9 +4,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Fingerprint, Crosshair, Play } from 'lucide-react';
 import { LegacyDemoScreen } from './LegacyDemoScreen';
 import { DEMOS, CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
+import { DemoBottomNav, TabType } from './DemoBottomNav';
+import { CharactersTab } from './CharactersTab';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<TabType>('home');
   // Entering the demo page should start Demo 1 playback immediately.
   const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(true);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
@@ -82,16 +85,33 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
       {/* MOBILE EXPERIENCE (Full Screen Vertical Feed) */}
       {/* ========================================================= */}
       {!isDesktopViewport && (
-        <div
-          ref={feedContainerRef}
-          onScroll={handleFeedScroll}
-          className="h-[100dvh] w-full relative overflow-y-scroll snap-y snap-mandatory hide-scrollbar"
-        >
-          {DEMOS.map((demo, index) => (
-            <section key={demo.id} className="h-[100dvh] w-full snap-start shrink-0">
-              {renderDemoScreen(index)}
-            </section>
-          ))}
+        <div className="relative h-[100dvh] w-full bg-[#020202] overflow-hidden">
+          <div
+            ref={feedContainerRef}
+            onScroll={handleFeedScroll}
+            className={`h-full w-full relative overflow-y-scroll snap-y snap-mandatory hide-scrollbar ${activeTab === 'home' ? 'block' : 'hidden'}`}
+          >
+            {DEMOS.map((demo, index) => (
+              <section key={demo.id} className="h-full w-full snap-start shrink-0">
+                {renderDemoScreen(index)}
+              </section>
+            ))}
+          </div>
+
+          {activeTab === 'characters' && (
+            <div className="absolute inset-0 z-40 bg-[#020202]">
+              <CharactersTab />
+            </div>
+          )}
+
+          {activeTab !== 'home' && activeTab !== 'characters' && (
+            <div className="w-full h-full flex flex-col items-center justify-center text-white/50 absolute inset-0 pb-20 z-40 bg-[#020202]">
+              <p className="text-sm tracking-widest uppercase font-medium">{activeTab}</p>
+              <p className="text-[10px] mt-2 opacity-50 uppercase tracking-wider">Coming soon</p>
+            </div>
+          )}
+          
+          <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
       )}
 
@@ -161,11 +181,11 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
               <div className="absolute top-40 -right-[14px] w-1 h-16 bg-[#222] rounded-r-md" />
               
               {/* Feed Content */}
-              <div className="w-full h-full relative rounded-[2.2rem] overflow-hidden">
+              <div className="w-full h-full relative rounded-[2.2rem] overflow-hidden bg-[#020202]">
                 <div
                   ref={feedContainerRef}
                   onScroll={handleFeedScroll}
-                  className="w-full h-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar"
+                  className={`w-full h-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar ${activeTab === 'home' ? 'block' : 'hidden'}`}
                 >
                   {DEMOS.map((demo, index) => (
                     <section key={demo.id} className="h-full w-full snap-start shrink-0">
@@ -173,6 +193,21 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
                     </section>
                   ))}
                 </div>
+
+                {activeTab === 'characters' && (
+                  <div className="absolute inset-0 z-40 bg-[#020202]">
+                    <CharactersTab />
+                  </div>
+                )}
+
+                {activeTab !== 'home' && activeTab !== 'characters' && (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-white/50 absolute inset-0 pb-20 z-40 bg-[#020202]">
+                    <p className="text-sm tracking-widest uppercase font-medium">{activeTab}</p>
+                    <p className="text-[10px] mt-2 opacity-50 uppercase tracking-wider">Coming soon</p>
+                  </div>
+                )}
+                
+                <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
               </div>
             </div>
             

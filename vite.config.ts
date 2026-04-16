@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import fs from 'fs';
+// import fs from "fs";
 
 export default defineConfig({
   base: "./",
@@ -19,12 +19,12 @@ export default defineConfig({
     }
   },
   server: {
-    host: '0.0.0.0', // 必须
-    port: 5173,
-    https: {
-      key: fs.readFileSync('./192.168.31.213-key.pem'),
-      cert: fs.readFileSync('./192.168.31.213.pem'),
-    }
+    host: "0.0.0.0", // 必须
+    port: 5173
+    // https: {
+    //   key: fs.readFileSync('./192.168.31.213-key.pem'),
+    //   cert: fs.readFileSync('./192.168.31.213.pem'),
+    // }
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.

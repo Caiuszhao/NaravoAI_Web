@@ -68,7 +68,28 @@ export const LEGACY_DEMO_3: DemoScenario = {
   playVideoAudio: true
 };
 
-export const DEMOS: DemoScenario[] = [STORY_CONFIG, LEGACY_DEMO_3, LEGACY_DEMO_2];
+export const LEGACY_DEMO_4: DemoScenario = {
+  id: 4,
+  title: "Kaleidoscope Heart",
+  feedHook: "Her appearance transforms to match her feelings. Can you discover the face she wears only for true love?",
+  showcaseHook:
+    "You've fallen for a girl whose physical form shifts to reflect her current emotional state. From a fiery, defensive exterior to a soft, joyful presence, your words shape how she feels—and how she looks. Can you guide her to a state of pure trust?",
+  interactionMethod: "Voice / Reply",
+  objective: "Guide her emotions to reveal her unguarded self",
+  commentCount: "12.4K",
+  strategyKey: "placeholder",
+  ui: {
+    enableLike: true,
+    enableComment: true,
+    enableCast: true,
+    enableFullscreen: true,
+    hideNonInteractiveUiWhenFullscreen: true
+  },
+  mediaType: "video",
+  videoBg: "https://image-b2.civitai.com/file/civitai-media-cache/535584e2-0805-4b3b-96a8-fe0eb24a2205/original"
+};
+
+export const DEMOS: DemoScenario[] = [STORY_CONFIG, LEGACY_DEMO_3, LEGACY_DEMO_2, LEGACY_DEMO_4];
 
 export const STORY1_PHASE_VIDEO_FILES = {
   intro: STORY1_VIDEOS.intro,
