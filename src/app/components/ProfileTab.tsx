@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
-import { ChevronRight, Flame, Mic, Settings, Sparkles, Star, Trophy, Waves, Zap } from 'lucide-react';
+import { ChevronRight, Flame, Mic, Settings, Sparkles, Star, Trophy, Waves, Zap, MessageSquarePlus } from 'lucide-react';
 import { CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
 
 const ELYSIA_AVATAR_URL = new URL('../../assets/Elysia.jpg', import.meta.url).href;
@@ -274,6 +274,27 @@ export function ProfileTab() {
                 <p className="text-[10px] text-white/62 leading-[1.45]">{item}</p>
               </div>
             ))}
+          </div>
+        </motion.section>
+
+        {/* Feedback Section */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="rounded-[1.15rem] border border-white/8 bg-gradient-to-br from-white/[0.04] to-transparent p-4 cursor-pointer hover:bg-white/[0.06] transition-colors group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <MessageSquarePlus className="w-5 h-5 text-white/80" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[14px] font-bold tracking-wide text-white/95">Give Feedback</h3>
+              <p className="text-[10px] text-white/50 leading-[1.4] mt-1 pr-2">
+                Help us shape the world. Report bugs, critique the storyline, or suggest new character arcs.
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-white/30 group-hover:text-white/70 transition-colors shrink-0" />
           </div>
         </motion.section>
       </div>
