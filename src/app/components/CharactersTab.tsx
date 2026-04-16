@@ -74,14 +74,14 @@ export function CharactersTab() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 px-4 sm:gap-5 sm:px-5">
+      <div className="grid grid-cols-2 gap-1.5 px-2 sm:gap-2.5 sm:px-3">
         {INTERACTIONS.map((item, i) => (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
             key={item.id}
-            className="relative flex flex-col rounded-[1.25rem] bg-white/[0.03] border border-white/5 overflow-hidden hover:bg-white/[0.06] transition-colors cursor-pointer"
+            className="relative flex flex-col rounded-[0.875rem] bg-white/[0.03] border border-white/5 overflow-hidden hover:bg-white/[0.06] transition-colors cursor-pointer"
           >
             {/* Large Avatar Card Image */}
             <div className="relative w-full aspect-[4/5] bg-black/50 flex-none overflow-hidden">

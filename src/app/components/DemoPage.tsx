@@ -6,6 +6,7 @@ import { LegacyDemoScreen } from './LegacyDemoScreen';
 import { DEMOS, CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
 import { DemoBottomNav, TabType } from './DemoBottomNav';
 import { CharactersTab } from './CharactersTab';
+import { ProfileTab } from './ProfileTab';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
@@ -66,6 +67,35 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
     return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
   };
 
+  const renderTabOverlay = () => {
+    if (activeTab === 'characters') {
+      return (
+        <div className="absolute inset-0 z-40 bg-[#020202]">
+          <CharactersTab />
+        </div>
+      );
+    }
+
+    if (activeTab === 'profile') {
+      return (
+        <div className="absolute inset-0 z-40 bg-[#020202]">
+          <ProfileTab />
+        </div>
+      );
+    }
+
+    if (activeTab !== 'home') {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center text-white/50 absolute inset-0 pb-20 z-40 bg-[#020202]">
+          <p className="text-sm tracking-widest uppercase font-medium">{activeTab}</p>
+          <p className="text-[10px] mt-2 opacity-50 uppercase tracking-wider">Coming soon</p>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mediaQueryList = window.matchMedia('(min-width: 1024px)');
@@ -98,18 +128,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
             ))}
           </div>
 
-          {activeTab === 'characters' && (
-            <div className="absolute inset-0 z-40 bg-[#020202]">
-              <CharactersTab />
-            </div>
-          )}
-
-          {activeTab !== 'home' && activeTab !== 'characters' && (
-            <div className="w-full h-full flex flex-col items-center justify-center text-white/50 absolute inset-0 pb-20 z-40 bg-[#020202]">
-              <p className="text-sm tracking-widest uppercase font-medium">{activeTab}</p>
-              <p className="text-[10px] mt-2 opacity-50 uppercase tracking-wider">Coming soon</p>
-            </div>
-          )}
+          {renderTabOverlay()}
           
           <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
@@ -194,18 +213,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
                   ))}
                 </div>
 
-                {activeTab === 'characters' && (
-                  <div className="absolute inset-0 z-40 bg-[#020202]">
-                    <CharactersTab />
-                  </div>
-                )}
-
-                {activeTab !== 'home' && activeTab !== 'characters' && (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-white/50 absolute inset-0 pb-20 z-40 bg-[#020202]">
-                    <p className="text-sm tracking-widest uppercase font-medium">{activeTab}</p>
-                    <p className="text-[10px] mt-2 opacity-50 uppercase tracking-wider">Coming soon</p>
-                  </div>
-                )}
+                {renderTabOverlay()}
                 
                 <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
               </div>
