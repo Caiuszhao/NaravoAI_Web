@@ -6,9 +6,14 @@ import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
 import { getDemo3PrefetchFilenames } from '../utils/demo3Prefetch';
 import { generateText } from '../utils/generateClient';
 import { createMp3ObjectUrl, postPrompt, postPromptTts } from '../utils/promptTtsClient';
-import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
 import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
-import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
+import {
+  buildDemo3GeneratePrompt,
+  buildDemo3FinalTtsPrompt,
+  type Demo3TurnRecord,
+  DEMO3_FIXED_TEST_REPLY,
+  DEMO3_INPUT_PLACEHOLDER,
+} from '../config/prompt.config';
 import { postAsrVoiceInputGenerate, extractAsrText } from '../utils/asrVoiceInputClient';
 import { arrayBufferToBase64, concatFloat32, encodeWav16Mono, resampleMonoLinear } from '../utils/audioWav';
 import { useDemoDebug } from '../context/DemoDebugContext';
@@ -28,7 +33,7 @@ const DEMO3_PROMPT_COUNTDOWN_SECONDS = 20;
 const DEMO3_PROMPT_TICK_MS = 100;
 const DEMO_PROMPT_PLACEHOLDER_BY_ID: Record<number, string> = {
   2: 'Send override pattern...',
-  3: 'Say something...',
+  3: DEMO3_INPUT_PLACEHOLDER,
 };
 
 function safeJson(value: unknown) {
@@ -367,6 +372,8 @@ export function LegacyDemoScreen({
   const demo3ReplayTokenRef = useRef(0);
   const [demo3IsCoverVisible, setDemo3IsCoverVisible] = useState(true);
   const demo3LastUserReplyRef = useRef('');
+  const demo3LastEmotionTypeRef = useRef<1 | 2 | 3 | 4 | 5>(5);
+  const demo3TurnHistoryRef = useRef<Demo3TurnRecord[]>([]);
   const demo3NarrationAbortRef = useRef<AbortController | null>(null);
   const demo3NarrationSigRef = useRef<string>('');
   const [demo3NarrationText, setDemo3NarrationText] = useState('');
@@ -738,7 +745,7 @@ export function LegacyDemoScreen({
     demo3ShowReplay,
   ]);
 
-  // Prefetch current + all reachable branch heads; warm decoders (Demo3 only).
+  // Prefetch current + all reachable branch heads (Demo3 only).
   useEffect(() => {
     if (!isDemo3) return;
     if (!isActive) return;
@@ -759,10 +766,15 @@ export function LegacyDemoScreen({
       .filter((u): u is string => Boolean(u));
     const uniqueDirect = [...new Set(directUrls)];
 
-    const processOne = async (direct: string) => {
+    // Combo-1 optimization:
+    // - Critical: warm up current + next (decoder warmup) so playback starts ASAP.
+    // - Background: resolve/cache everything else (no decoder warmup) to avoid blocking critical decode.
+    const processOne = async (direct: string, { warmup }: { warmup: boolean }) => {
       const resolved = await resolveCachedMediaUrl(direct, { kind: 'video', signal: controller.signal });
       putResolved(direct, resolved);
-      await warmupVideoUrl(resolved, { signal: controller.signal, timeoutMs: 12000 });
+      if (warmup) {
+        await warmupVideoUrl(resolved, { signal: controller.signal, timeoutMs: 12000 });
+      }
     };
 
     const runPool = async (items: string[], concurrency: number) => {
@@ -773,7 +785,7 @@ export function LegacyDemoScreen({
             const item = q.shift();
             if (!item) break;
             try {
-              await processOne(item);
+              await processOne(item, { warmup: false });
             } catch {
               // ignore per-asset failures
             }
@@ -782,7 +794,27 @@ export function LegacyDemoScreen({
       );
     };
 
-    void runPool(uniqueDirect, 2);
+    void (async () => {
+      try {
+        const criticalFilenames = [demo3CurrentFilename, demo3Queue[0]].filter(Boolean) as string[];
+        const criticalDirect = criticalFilenames
+          .map((fn) => getDemo3ClipUrl(fn))
+          .filter((u): u is string => Boolean(u));
+
+        // 1) Critical warmup sequential (lower decoder pressure).
+        for (const direct of criticalDirect) {
+          if (controller.signal.aborted) break;
+          await processOne(direct, { warmup: true });
+        }
+
+        // 2) Background resolve/cache without warmup.
+        const background = uniqueDirect.filter((u) => !criticalDirect.includes(u));
+        await runPool(background, 2);
+      } catch {
+        // ignore
+      }
+    })();
+
     return () => controller.abort();
   }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, playlist]);
 
@@ -955,6 +987,8 @@ export function LegacyDemoScreen({
     setDemo3VoiceInputActive(false);
     setDemo3HighEmotionHits(0);
     demo3LastUserReplyRef.current = '';
+    demo3LastEmotionTypeRef.current = 5;
+    demo3TurnHistoryRef.current = [];
     demo3NarrationAbortRef.current?.abort();
     demo3NarrationAbortRef.current = null;
     demo3NarrationSigRef.current = '';
@@ -1044,25 +1078,28 @@ export function LegacyDemoScreen({
     const trimmed = rawText.trim();
     demo3LastUserReplyRef.current = trimmed;
     let emotionType: 1 | 2 | 3 | 4 | 5 = 5;
-
-    pushDebug({
-      kind: 'api_request',
-      title: 'POST /api/v1/generate (Demo3)',
-      body: `${safeJson({ text: trimmed })}\ncontext: clip=${demo3CurrentFilename}`,
-    });
+    let resultSummary = '';
 
     // Empty input => emotion_type=5 (retry).
     if (trimmed) {
+      const generatePayload = buildDemo3GeneratePrompt(trimmed, demo3CurrentFilename);
+      pushDebug({
+        kind: 'api_request',
+        title: 'POST /api/v1/generate (Demo3)',
+        body: `${safeJson({ text: generatePayload, viewerReply: trimmed, clip: demo3CurrentFilename })}`,
+      });
       demo3GenerateAbortRef.current?.abort();
       const controller = new AbortController();
       demo3GenerateAbortRef.current = controller;
       setIsDemo3Generating(true);
       try {
         const result = await generateText(
-          { text: trimmed },
+          { text: generatePayload },
           { signal: controller.signal, baseUrl: generateApiBaseUrl }
         );
         emotionType = extractEmotionType(result) ?? 5;
+        demo3LastEmotionTypeRef.current = emotionType;
+        resultSummary = safeJson(result);
         pushDebug({
           kind: 'api_response',
           title: 'Generate OK (Demo3)',
@@ -1087,6 +1124,18 @@ export function LegacyDemoScreen({
         kind: 'api_response',
         title: 'Generate skipped (Demo3)',
         body: 'Empty input — no HTTP call. emotion_type defaults to 5.',
+      });
+    }
+
+    if (trimmed) {
+      const history = demo3TurnHistoryRef.current;
+      history.push({
+        turn: history.length + 1,
+        clip: demo3CurrentFilename,
+        inputMode: 'text',
+        userInput: trimmed,
+        emotionType,
+        resultSummary: resultSummary ? resultSummary.slice(0, 1400) : undefined,
       });
     }
 
@@ -1118,6 +1167,16 @@ export function LegacyDemoScreen({
       const reply = typeof ce.detail?.fixedReply === 'string' ? ce.detail.fixedReply : DEMO3_FIXED_TEST_REPLY;
       demo3LastUserReplyRef.current = reply;
       setDemo3InputValue(reply);
+      demo3LastEmotionTypeRef.current = emotionType;
+      const history = demo3TurnHistoryRef.current;
+      history.push({
+        turn: history.length + 1,
+        clip: demo3ClipRef.current,
+        inputMode: 'debug',
+        userInput: reply,
+        emotionType,
+        resultSummary: 'debug inject',
+      });
       const isHighEmotion = emotionType === 4 || emotionType === 5;
       if (isHighEmotion) setDemo3HighEmotionHits((h) => h + 1);
       demo3StopPrompt();
@@ -1156,7 +1215,7 @@ export function LegacyDemoScreen({
     if (demo3CurrentFilename !== 'ep_5.mp4') return;
     if (demo3Queue[0] !== 'ep_last.mp4') return;
 
-    const sig = `${demo3ReplayTokenRef.current}|${demo3LastUserReplyRef.current}`;
+    const sig = `${demo3ReplayTokenRef.current}|${demo3LastUserReplyRef.current}|${demo3LastEmotionTypeRef.current}`;
     if (demo3NarrationSigRef.current === sig) return;
     demo3NarrationSigRef.current = sig;
 
@@ -1168,7 +1227,11 @@ export function LegacyDemoScreen({
 
     void (async () => {
       try {
-        const prompt = buildPromptTtsFullPrompt(demo3LastUserReplyRef.current);
+        const prompt = buildDemo3FinalTtsPrompt({
+          emotionType: demo3LastEmotionTypeRef.current,
+          callbackPhrase: demo3LastUserReplyRef.current,
+          history: demo3TurnHistoryRef.current,
+        });
         pushDebug({
           kind: 'api_request',
           title: 'POST /api/v1/prompt (Demo3 ep_5 narration)',
@@ -1742,6 +1805,16 @@ export function LegacyDemoScreen({
                     }
 
                     const emotionType = extractEmotionType(res) ?? 5;
+                    demo3LastEmotionTypeRef.current = emotionType;
+                    const history = demo3TurnHistoryRef.current;
+                    history.push({
+                      turn: history.length + 1,
+                      clip: demo3ClipRef.current,
+                      inputMode: 'voice',
+                      userInput: asrText || '(empty ASR)',
+                      emotionType,
+                      resultSummary: safeJson(res).slice(0, 1400),
+                    });
                     pushDebug({
                       kind: 'api_response',
                       title: 'ASR voice-input-generate OK (Demo3)',

@@ -8,8 +8,8 @@ import {
   postTts,
 } from '../utils/promptTtsClient';
 import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
-import { buildPromptTtsFullPrompt, PROMPT_TTS_SCENE_BACKGROUND } from '../utils/demo3NarrationPrompt';
-import { DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
+import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
+import { DEMO3_FIXED_TEST_REPLY, PROMPT_TTS_SCENE_BACKGROUND } from '../config/prompt.config';
 import { postAsrVoiceInputGenerate, extractAsrText } from '../utils/asrVoiceInputClient';
 import { arrayBufferToBase64, concatFloat32, encodeWav16Mono, resampleMonoLinear } from '../utils/audioWav';
 import { useDemoDebug } from '../context/DemoDebugContext';
@@ -196,7 +196,7 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
       model: voiceModel.trim() || undefined,
       system: voiceSystem.trim() || undefined,
       temperature: Number.isFinite(temperature) ? temperature : undefined,
-      max_tokens: Number.isFinite(max_tokens) ? max_tokens : undefined,
+      max_tokens,
       extra,
     };
   }, [voiceProvider, voiceModel, voiceSystem, voiceTemperature, voiceMaxTokens, voiceExtraJson]);
@@ -735,7 +735,7 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
           {tab === 'promptTts' && (
             <>
               <p className="text-[10px] text-white/45 leading-relaxed">
-                场景背景（PROMPT_TTS_SCENE_BACKGROUND）与观众回复会拼成完整 prompt，再调用 prompt-tts 返回 MP3。
+                场景背景（默认见 <code className="text-white/70">src/app/config/prompt.config.ts</code>）与观众回复会拼成完整 prompt，再调用 prompt-tts 返回 MP3。
               </p>
               <label className="grid gap-1.5">
                 <span className="text-[10px] text-white/50 uppercase tracking-wider">Scene / background</span>

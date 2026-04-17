@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { Bug, ChevronDown, ChevronUp, ClipboardCopy, GripVertical, Trash2 } from 'lucide-react';
 import { useDemoDebug } from '../context/DemoDebugContext';
 import { useApiEnv } from '../context/ApiEnvContext';
-import { DEMO3_BRANCH_TEST_PLAYBOOK, DEMO3_FIXED_TEST_REPLY } from '../utils/demo3BranchTest';
+import { DEMO3_BRANCH_TEST_PLAYBOOK, DEMO3_FIXED_TEST_REPLY } from '../config/prompt.config';
 
 function formatTime(ts: number) {
   try {

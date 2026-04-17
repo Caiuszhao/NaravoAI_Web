@@ -131,7 +131,8 @@ const VIDEO_ASSET_URLS: Record<VideoAssetKey, string> = {
 
 const SESSION_PRELOAD_PROMISES: Partial<Record<VideoAssetKey, Promise<string>>> = {};
 const SESSION_RESOLVED_SOURCES: Record<VideoAssetKey, string> = { ...VIDEO_ASSET_URLS };
-let SESSION_WARMUP_STARTED = false;
+type SessionWarmupState = 'idle' | 'running' | 'done';
+let SESSION_WARMUP_STATE: SessionWarmupState = 'idle';
 let SESSION_WARMUP_PROMISE: Promise<void> | null = null;
 const LOOP_SPEED_DEBUG_ENABLED =
   typeof window !== 'undefined' &&
@@ -554,61 +555,90 @@ export function DemoFeed({
   }, [activeVideoSlot, isActive]);
 
   useEffect(() => {
+    // Combo-1 optimization:
+    // - Demo1 warmup is *critical* only when Demo1 is active (preemptable)
+    // - When user switches to another demo, abort warmup immediately to free bandwidth/decoder
+    if (!allowPlayback) return;
+
     let isCancelled = false;
+    const controller = new AbortController();
+
     const withWarmupTimeout = async (assetKey: VideoAssetKey, timeoutMs: number) => {
       const directSource = VIDEO_ASSET_URLS[assetKey];
       const timeoutPromise = new Promise<string>((resolve) => {
         window.setTimeout(() => resolve(directSource), timeoutMs);
       });
-      return Promise.race([resolveCachedVideo(assetKey), timeoutPromise]);
+      return Promise.race([resolveCachedVideo(assetKey, controller.signal), timeoutPromise]);
     };
 
-    const syncWarmupState = async () => {
-      if (!SESSION_WARMUP_STARTED) {
-        SESSION_WARMUP_STARTED = true;
-        logVideoWarmup('session warmup start');
-        SESSION_WARMUP_PROMISE = (async () => {
+    const ensureSessionWarmup = () => {
+      if (SESSION_WARMUP_STATE === 'done') {
+        logVideoWarmup('session warmup reuse', '(done)');
+        return SESSION_WARMUP_PROMISE ?? Promise.resolve();
+      }
+      if (SESSION_WARMUP_STATE === 'running') {
+        logVideoWarmup('session warmup reuse', '(running)');
+        return SESSION_WARMUP_PROMISE ?? Promise.resolve();
+      }
+
+      SESSION_WARMUP_STATE = 'running';
+      logVideoWarmup('session warmup start');
+      SESSION_WARMUP_PROMISE = (async () => {
+        try {
           logVideoWarmup('intro warmup queued');
-          await resolveCachedVideo('intro');
+          await resolveCachedVideo('intro', controller.signal);
           logVideoWarmup('intro warmup done');
           logVideoWarmup('loop warmup queued');
-          await resolveCachedVideo('loop');
+          await resolveCachedVideo('loop', controller.signal);
           logVideoWarmup('loop warmup done');
           logVideoWarmup('branch warmup queued');
           await Promise.all([
-            resolveCachedVideo('click'),
-            resolveCachedVideo('hold'),
-            resolveCachedVideo('rapid'),
+            resolveCachedVideo('click', controller.signal),
+            resolveCachedVideo('hold', controller.signal),
+            resolveCachedVideo('rapid', controller.signal),
           ]);
           logVideoWarmup('branch warmup done');
-        })();
-      } else {
-        logVideoWarmup('session warmup reuse');
-      }
-
-      const introSource = await withWarmupTimeout('intro', 12000);
-      if (isCancelled) return;
-
-      setResolvedVideoSources((previous) => ({ ...previous, intro: introSource }));
-      setIsIntroReady(true);
-
-      const loopSource = await withWarmupTimeout('loop', 10000);
-      if (isCancelled) return;
-
-      setResolvedVideoSources((previous) => ({ ...previous, loop: loopSource }));
-
-      await SESSION_WARMUP_PROMISE;
-      if (isCancelled) return;
-
-      setResolvedVideoSources({ ...SESSION_RESOLVED_SOURCES });
+          SESSION_WARMUP_STATE = 'done';
+        } catch (e) {
+          // Abort or transient failure: allow restarting next time.
+          if ((e as any)?.name === 'AbortError' || controller.signal.aborted) {
+            logVideoWarmup('session warmup aborted');
+          } else {
+            logVideoWarmup('session warmup failed', e instanceof Error ? e.message : '(unknown error)');
+          }
+          SESSION_WARMUP_STATE = 'idle';
+          throw e;
+        }
+      })();
+      return SESSION_WARMUP_PROMISE;
     };
 
-    void syncWarmupState();
+    void (async () => {
+      try {
+        // Critical stage: index_1 then index_2 (fast path for immediate playback).
+        const introSource = await withWarmupTimeout('intro', 12000);
+        if (isCancelled) return;
+        setResolvedVideoSources((previous) => ({ ...previous, intro: introSource }));
+        setIsIntroReady(true);
+
+        const loopSource = await withWarmupTimeout('loop', 10000);
+        if (isCancelled) return;
+        setResolvedVideoSources((previous) => ({ ...previous, loop: loopSource }));
+
+        // Background stage: branches + cache fill; still abortable via controller.
+        await ensureSessionWarmup().catch(() => undefined);
+        if (isCancelled) return;
+        if (SESSION_WARMUP_STATE === 'done') setResolvedVideoSources({ ...SESSION_RESOLVED_SOURCES });
+      } catch {
+        // best-effort; playback can still proceed with direct URLs
+      }
+    })();
 
     return () => {
       isCancelled = true;
+      controller.abort();
     };
-  }, []);
+  }, [allowPlayback]);
 
   useEffect(() => {
     return () => {
@@ -618,7 +648,7 @@ export function DemoFeed({
     };
   }, []);
 
-  const resolveCachedVideo = async (assetKey: VideoAssetKey) => {
+  const resolveCachedVideo = async (assetKey: VideoAssetKey, signal?: AbortSignal) => {
     const directSource = VIDEO_ASSET_URLS[assetKey];
 
     // Branch clips may be blocked by CORS for JS fetch in some environments.
@@ -648,6 +678,7 @@ export function DemoFeed({
         const requestInit: RequestInit = {
           mode: 'cors',
           credentials: 'omit',
+          signal,
         };
 
         if ('caches' in window && window.isSecureContext) {

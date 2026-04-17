@@ -29,4 +29,4 @@ export const DEMO3_VIDEOS = [
   'ep_4_4.mp4',
   'ep_5.mp4',
   'ep_last.mp4',
-].map((name) => `${COS_STORY_BASE}/demo2/${name}`) as readonly string[];
+].map((name) => `${STORY_BASE}/demo2/${name}`) as readonly string[];

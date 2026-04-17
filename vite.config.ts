@@ -22,15 +22,15 @@ export default defineConfig({
     host: '0.0.0.0', // 必须
     port: 5173,
     https: {
-      key: fs.readFileSync('./192.168.31.213-key.pem'),
-      cert: fs.readFileSync('./192.168.31.213.pem'),
+      key: fs.readFileSync('./key.pem'),
+      cert: fs.readFileSync('./cert.pem'),
     }
     ,
     proxy: {
       // Same-origin API in dev: browser calls https://<host>:5173/api/*,
       // Vite proxies to backend (HTTP or self-signed HTTPS) to avoid mixed-content/CORS.
       '/api': {
-        target: 'http://192.168.31.213:8000',
+        target: 'http://192.168.28.100:8000',
         changeOrigin: true,
         // `secure` only applies to HTTPS targets; keep false for future switches.
         secure: false,

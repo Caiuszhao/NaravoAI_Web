@@ -64,7 +64,7 @@ export const LEGACY_DEMO_3: DemoScenario = {
   mediaType: "video",
   videoBg: DEMO3_VIDEOS[0],
   videos: DEMO3_VIDEOS,
-  bgmUrl: "https://playable-1257281110.cos.ap-guangzhou.myqcloud.com/story_last_day/demo2/demo2_bgm.mp3",
+  bgmUrl: "https://jiatingkupao.com/story_last_day/demo2/demo2_bgm.mp3",
   playVideoAudio: true
 };
 

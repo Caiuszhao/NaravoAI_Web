@@ -17,7 +17,10 @@ import { ApiEnvProvider } from './context/ApiEnvContext';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'demo'>('home');
-  const [isDebugUiVisible, setIsDebugUiVisible] = useState(false);
+  const [isDebugUiVisible, setIsDebugUiVisible] = useState(() => {
+    if (!appRuntimeConfig.enableDebugPanel) return false;
+    return !appRuntimeConfig.debugPanelRequireFiveTaps;
+  });
   const debugLogoTapCountRef = useRef(0);
 
   useEffect(() => {
@@ -40,6 +43,7 @@ export default function App() {
 
   const handleLogoClick = () => {
     if (!appRuntimeConfig.enableDebugPanel) return;
+    if (!appRuntimeConfig.debugPanelRequireFiveTaps) return;
     debugLogoTapCountRef.current += 1;
     if (debugLogoTapCountRef.current >= 5) {
       debugLogoTapCountRef.current = 0;
