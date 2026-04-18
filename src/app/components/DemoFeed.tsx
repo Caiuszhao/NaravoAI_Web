@@ -1456,10 +1456,13 @@ export function DemoFeed({
               <div className="flex flex-col gap-4 w-full pointer-events-auto">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2">
                   <div className={`flex flex-col gap-1.5 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                    <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    <h2
+                      className="text-[15px] font-bold text-white drop-shadow-md leading-tight select-none [-webkit-touch-callout:none]"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
                       {STORY_CONFIG.title}
                     </h2>
-                    <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+                    <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] select-none [-webkit-touch-callout:none]">
                       {STORY_CONFIG.feedHook}
                     </p>
                   </div>

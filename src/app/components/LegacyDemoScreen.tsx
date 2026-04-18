@@ -1824,10 +1824,13 @@ export function LegacyDemoScreen({
                 shouldHideNonInteractiveUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
               }`}
             >
-              <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              <h2
+                className="text-[15px] font-bold text-white drop-shadow-md leading-tight select-none [-webkit-touch-callout:none]"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
                 {demo.title}
               </h2>
-              <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+              <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] select-none [-webkit-touch-callout:none]">
                 {demo.feedHook}
               </p>
             </div>
