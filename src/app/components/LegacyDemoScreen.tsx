@@ -26,12 +26,14 @@ import { usePlayerShell } from '../interactive/core/usePlayerShell';
 import { PlayerShellCenterOverlay } from '../interactive/core/PlayerShellCenterOverlay';
 import { DemoCastDrawer } from '../interactive/engagement/DemoCastDrawer';
 import { DemoCommentsDrawer } from '../interactive/engagement/DemoCommentsDrawer';
+import { DemoEpisodesDrawer, type EpisodeInfo } from '../interactive/engagement/DemoEpisodesDrawer';
 import { DemoEngagementPanel } from '../interactive/engagement/DemoEngagementPanel';
 import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
 import type { DemoCharacterPreview } from '../interactive/types/demo';
 
 const DEMO3_COVER_URL = new URL('../../assets/Demo3-cover.jpg', import.meta.url).href;
 const ADRIAN_VALE_AVATAR_URL = new URL('../../assets/Adrian_Vale.jpg', import.meta.url).href;
+const ELYSIA_AVATAR_URL = new URL('../../assets/Elysia.jpg', import.meta.url).href;
 const DEMO3_PROMPT_COUNTDOWN_SECONDS = 20;
 const DEMO3_PROMPT_TICK_MS = 100;
 const DEMO_PROMPT_PLACEHOLDER_BY_ID: Record<number, string> = {
@@ -295,6 +297,11 @@ const MOCK_COMMENTS_BY_DEMO: Record<number, LegacyComment[]> = {
     { id: 2, name: 'Sophia', handle: '@sophiaux', text: 'Would love multi-step reply branches in the next version.', likes: '711', time: '2h' },
     { id: 3, name: 'Mason', handle: '@masonbuilds', text: 'Strong narrative flow and emotional pacing.', likes: '503', time: '4h' },
   ],
+  4: [
+    { id: 1, name: 'Liam', handle: '@liam.drifter', text: 'When she shifted from that icy, defensive look to the warm, glowing one after I comforted her... wow.', likes: '2.5K', time: '1h' },
+    { id: 2, name: 'Chloe', handle: '@chloe.tech', text: 'It\'s so fascinating! Every time I made her laugh, her hair and eyes changed completely. It feels so personal.', likes: '1.1K', time: '3h' },
+    { id: 3, name: 'Jax', handle: '@jax_hunter', text: 'I accidentally made her sad and her form turned so fragile and blue. I immediately apologized to make her smile again!', likes: '845', time: '4h' },
+  ],
 };
 
 const CHARACTERS_BY_DEMO: Record<number, LegacyCharacter[]> = {
@@ -341,7 +348,33 @@ const CHARACTERS_BY_DEMO: Record<number, LegacyCharacter[]> = {
       unlocked: false,
     },
   ],
+  4: [
+    {
+      id: 1,
+      name: 'Elysia',
+      role: 'The Emotion Shifter',
+      summary:
+        'Elysia bears a beautiful but vulnerable gift: her physical appearance completely transforms to match her dominant emotion. When she is anxious, she takes on a guarded, cold form; when joyful, she radiates a warm, captivating presence. Because she cannot hide how she feels, she is deeply afraid of getting hurt. By talking to her and truly understanding her feelings, you can witness the breathtaking spectrum of her forms and eventually earn the appearance she only shows to someone she loves.',
+      unlocked: true,
+      avatar: ELYSIA_AVATAR_URL,
+    },
+    {
+      id: 2,
+      name: 'The Unguarded Self',
+      role: 'Locked Form',
+      summary: 'Keep building an emotional connection to unlock the form she hides from the rest of the world.',
+      unlocked: false,
+    },
+  ],
 };
+
+const MOCK_EPISODES: EpisodeInfo[] = [
+  { id: 1, title: 'Escaping a dangerous world', duration: '0:45', status: 'unlocked', thumbnailUrl: DEMO3_COVER_URL },
+  { id: 2, title: 'Saving someone under pressure', duration: '1:12', status: 'playing' },
+  { id: 3, title: 'Emotionally responding', duration: '2:05', status: 'locked' },
+  { id: 4, title: 'The final confrontation', duration: '1:50', status: 'locked' },
+  { id: 5, title: 'Aftermath', duration: '0:30', status: 'locked' },
+];
 
 export function LegacyDemoScreen({
   demo,
@@ -359,6 +392,7 @@ export function LegacyDemoScreen({
   const [isLiked, setIsLiked] = useState(false);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isCharactersOpen, setIsCharactersOpen] = useState(false);
+  const [isEpisodesOpen, setIsEpisodesOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const demo3Video0Ref = useRef<HTMLVideoElement>(null);
   const demo3Video1Ref = useRef<HTMLVideoElement>(null);
@@ -1782,7 +1816,7 @@ export function LegacyDemoScreen({
       </div>
 
       {isDemo3 && demo3CurrentFilename === 'ep_last.mp4' && !demo3IsLoading && !demo3ShowReplay && (
-        <div className="absolute left-0 right-0 bottom-[5.75rem] z-[75] px-4 pointer-events-none">
+        <div className="absolute left-0 right-0 bottom-[6.75rem] z-[75] px-4 pointer-events-none">
           <div className="mx-auto max-w-[520px] rounded-2xl border border-white/15 bg-black/55 backdrop-blur-xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.42)] pointer-events-auto flex flex-col gap-2">
             <div className="flex justify-end w-full">
               <button
@@ -1875,7 +1909,7 @@ export function LegacyDemoScreen({
           {/* Bottom text input overlay */}
           <div
             data-ui-layer="true"
-            className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-[6.125rem] pointer-events-auto"
+            className="absolute left-0 right-0 bottom-0 z-[80] px-4 pb-[7.125rem] pointer-events-auto"
           >
             <Demo3InputComposer
               value={demo3InputValue}
@@ -2058,8 +2092,8 @@ export function LegacyDemoScreen({
         onReplay={isDemo3 ? handleDemo3ReplayFromStart : handleLegacyReplayFromStart}
       />
 
-      <div className="absolute inset-0 flex flex-col justify-end z-10">
-        <div className="relative z-[120] p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
+      <div className="absolute inset-0 flex flex-col justify-end z-10 pb-[72px]">
+        <div className="relative z-[120] p-4 w-full flex flex-col justify-end pointer-events-none">
           <div className="flex flex-col gap-4 w-full pointer-events-auto">
             <div
               data-ui-layer="true"
@@ -2067,10 +2101,13 @@ export function LegacyDemoScreen({
                 shouldHideNonInteractiveUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
               }`}
             >
-              <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              <h2
+                className="text-[15px] font-bold text-white drop-shadow-md leading-tight select-none [-webkit-touch-callout:none]"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
                 {demo.title}
               </h2>
-              <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+              <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] select-none [-webkit-touch-callout:none]">
                 {demo.feedHook}
               </p>
             </div>
@@ -2089,11 +2126,18 @@ export function LegacyDemoScreen({
               onToggleLike={() => setIsLiked((previous) => !previous)}
               onOpenComments={() => {
                 setIsCharactersOpen(false);
+                setIsEpisodesOpen(false);
                 setIsCommentsOpen(true);
               }}
               onOpenCharacters={() => {
                 setIsCommentsOpen(false);
+                setIsEpisodesOpen(false);
                 setIsCharactersOpen(true);
+              }}
+              onOpenEpisodes={() => {
+                setIsCommentsOpen(false);
+                setIsCharactersOpen(false);
+                setIsEpisodesOpen(true);
               }}
               onToggleFullscreen={handleToggleFullscreen}
               hideNonInteractiveUi={shouldHideNonInteractiveUi}
@@ -2117,6 +2161,12 @@ export function LegacyDemoScreen({
         subtitle={demo.title}
         comments={comments}
         onClose={() => setIsCommentsOpen(false)}
+      />
+
+      <DemoEpisodesDrawer
+        isOpen={isEpisodesOpen}
+        episodes={MOCK_EPISODES}
+        onClose={() => setIsEpisodesOpen(false)}
       />
     </div>
   );

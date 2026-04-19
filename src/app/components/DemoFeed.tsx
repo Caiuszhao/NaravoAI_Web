@@ -11,6 +11,7 @@ import { PlayerShellCenterOverlay } from '../interactive/core/PlayerShellCenterO
 import { DemoEngagementPanel } from '../interactive/engagement/DemoEngagementPanel';
 import { DemoCastDrawer } from '../interactive/engagement/DemoCastDrawer';
 import { DemoCommentsDrawer } from '../interactive/engagement/DemoCommentsDrawer';
+import { DemoEpisodesDrawer, type EpisodeInfo } from '../interactive/engagement/DemoEpisodesDrawer';
 import { DemoTopBar } from '../interactive/engagement/DemoTopBar';
 import type { DemoCharacterPreview } from '../interactive/types/demo';
 
@@ -236,6 +237,14 @@ function getPlaybackSnapshot(phase: StoryPhase): StoryPlaybackSnapshot {
   return { phase, activeBranch: 'rapid', statusLabel: 'Forced entry failed' };
 }
 
+const MOCK_EPISODES: EpisodeInfo[] = [
+  { id: 1, title: 'Escaping a dangerous world', duration: '0:45', status: 'playing', thumbnailUrl: DEMO1_COVER_URL },
+  { id: 2, title: 'Saving someone under pressure', duration: '1:12', status: 'unlocked' },
+  { id: 3, title: 'Emotionally responding', duration: '2:05', status: 'locked' },
+  { id: 4, title: 'The final confrontation', duration: '1:50', status: 'locked' },
+  { id: 5, title: 'Aftermath', duration: '0:30', status: 'locked' },
+];
+
 export function DemoFeed({
   onBackHome,
   onStoryStateChange,
@@ -296,6 +305,7 @@ export function DemoFeed({
   const [activeCommentsDemoId, setActiveCommentsDemoId] = useState<number | null>(STORY_CONFIG.id);
   const [isCharactersOpen, setIsCharactersOpen] = useState(false);
   const [activeCharactersDemoId, setActiveCharactersDemoId] = useState<number | null>(STORY_CONFIG.id);
+  const [isEpisodesOpen, setIsEpisodesOpen] = useState(false);
   const [storyPhase, setStoryPhase] = useState<StoryPhase>('intro');
   const [loopWindowProgress, setLoopWindowProgress] = useState(0);
   const storyPhaseRef = useRef<StoryPhase>(storyPhase);
@@ -1362,11 +1372,22 @@ export function DemoFeed({
   const handleOpenCharacters = (demoId: number) => {
     setActiveCharactersDemoId(demoId);
     setIsCommentsOpen(false);
+    setIsEpisodesOpen(false);
     setIsCharactersOpen(true);
   };
 
   const handleCloseCharacters = () => {
     setIsCharactersOpen(false);
+  };
+
+  const handleOpenEpisodes = () => {
+    setIsCommentsOpen(false);
+    setIsCharactersOpen(false);
+    setIsEpisodesOpen(true);
+  };
+
+  const handleCloseEpisodes = () => {
+    setIsEpisodesOpen(false);
   };
 
   const handleToggleFullscreen = () => {
@@ -1562,16 +1583,19 @@ export function DemoFeed({
           </div>
         )}
 
-        <div className="absolute inset-0 flex flex-col justify-between z-10">
+        <div className="absolute inset-0 flex flex-col justify-between z-10 pb-[72px]">
           <div className="flex-1 flex items-end">
-            <div data-ui-layer="true" className="relative z-[120] p-4 pb-12 w-full flex flex-col justify-end pointer-events-none">
+            <div data-ui-layer="true" className="relative z-[120] p-4 w-full flex flex-col justify-end pointer-events-none">
               <div className="flex flex-col gap-4 w-full pointer-events-auto">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-2">
                   <div className={`flex flex-col gap-1.5 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                    <h2 className="text-[15px] font-bold text-white drop-shadow-md leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    <h2
+                      className="text-[15px] font-bold text-white drop-shadow-md leading-tight select-none [-webkit-touch-callout:none]"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
                       {STORY_CONFIG.title}
                     </h2>
-                    <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+                    <p className="text-white/80 text-[12px] font-light leading-snug max-w-[300px] overflow-hidden [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] select-none [-webkit-touch-callout:none]">
                       {STORY_CONFIG.feedHook}
                     </p>
                   </div>
@@ -1592,6 +1616,7 @@ export function DemoFeed({
                     onToggleLike={() => handleToggleLike(STORY_CONFIG.id)}
                     onOpenComments={() => handleOpenComments(STORY_CONFIG.id)}
                     onOpenCharacters={() => handleOpenCharacters(STORY_CONFIG.id)}
+                    onOpenEpisodes={handleOpenEpisodes}
                     onToggleFullscreen={handleToggleFullscreen}
                     hideNonInteractiveUi={isFullscreen}
                     enableFullscreen={STORY_CONFIG.ui.enableFullscreen}
@@ -1602,7 +1627,7 @@ export function DemoFeed({
           </div>
         </div>
 
-        <div data-ui-layer="true" className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none pb-[11rem] sm:pb-[11.5rem] lg:pb-[12rem] z-20">
+        <div data-ui-layer="true" className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none pb-[12rem] sm:pb-[12.5rem] lg:pb-[13rem] z-20">
           <div className={`transition-transform duration-300 ${isFullscreen ? 'translate-y-16' : 'translate-y-0'}`}>
             <AnimatePresence mode="wait">
               {storyPhase === 'loop' ? (
@@ -1712,6 +1737,11 @@ export function DemoFeed({
         subtitle={activeCommentsDemo.title}
         comments={activeComments}
         onClose={handleCloseComments}
+      />
+      <DemoEpisodesDrawer
+        isOpen={isEpisodesOpen}
+        episodes={MOCK_EPISODES}
+        onClose={handleCloseEpisodes}
       />
     </div>
   );

@@ -82,18 +82,18 @@ export function DemoCastDrawer({
                         <span className="text-white/70 text-[16px] font-bold">?</span>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0 flex flex-col gap-0.5 mt-0.5">
+                      <div className="flex flex-col">
                         <span
-                          className={`text-[12px] font-semibold ${
-                            character.unlocked ? 'text-white/90' : 'text-white/50'
+                          className={`text-[13px] font-semibold leading-tight ${
+                            character.unlocked ? 'text-white/95' : 'text-white/50'
                           }`}
                         >
                           {character.unlocked ? character.name : 'Locked Character'}
                         </span>
                         <span
-                          className={`text-[10px] uppercase tracking-[0.16em] ${
-                            character.unlocked ? 'text-white/35' : 'text-white/25'
+                          className={`text-[9px] font-medium uppercase tracking-[0.16em] leading-snug ${
+                            character.unlocked ? 'text-white/40' : 'text-white/25'
                           }`}
                         >
                           {character.role}
