@@ -130,8 +130,32 @@ export async function postTts(
   return response.blob();
 }
 
+export type PromptTtsResponseMeta = {
+  /** 服务端若通过响应头回传「用于 TTS 的模型输出」则填入（便于联调）。 */
+  llmOutputText?: string;
+  /** 服务端若回传可直链播放的音频 URL（自定义头或 Location）。 */
+  responseAudioUrl?: string;
+};
+
+export type PromptTtsResult = {
+  blob: Blob;
+  meta: PromptTtsResponseMeta;
+};
+
+function firstHeader(headers: Headers, names: string[]): string | undefined {
+  for (const name of names) {
+    const raw = headers.get(name);
+    if (raw != null) {
+      const v = raw.trim();
+      if (v !== '') return v;
+    }
+  }
+  return undefined;
+}
+
 /**
  * POST /api/v1/prompt-tts — 正常为 MP3 二进制；模型输出为空等错误时为 JSON（如 error_code: llm_empty_output）。
+ * 可选响应头（任填其一即可在测试页展示）：朗读文本 `X-Prompt-Tts-Text` / `X-LLM-Text` / `X-Generated-Text`；音频直链 `X-Prompt-Tts-Audio-Url` / `X-Audio-Url` / `Location`。
  */
 export async function postPromptTts(
   body: PromptTtsApiRequest,
@@ -139,7 +163,7 @@ export async function postPromptTts(
     baseUrl = DEFAULT_GENERATE_API_BASE_URL,
     signal,
   }: { baseUrl?: string; signal?: AbortSignal } = {}
-): Promise<Blob> {
+): Promise<PromptTtsResult> {
   const url = `${normalizeBase(baseUrl)}/api/v1/prompt-tts`;
   const response = await fetch(url, {
     method: 'POST',
@@ -168,7 +192,23 @@ export async function postPromptTts(
     throw new Error(err.message ? `${code}: ${err.message}` : code);
   }
 
-  return response.blob();
+  const meta: PromptTtsResponseMeta = {
+    llmOutputText: firstHeader(response.headers, [
+      'x-prompt-tts-text',
+      'x-llm-text',
+      'x-generated-text',
+      'x-naravo-llm-text',
+    ]),
+    responseAudioUrl: firstHeader(response.headers, [
+      'x-prompt-tts-audio-url',
+      'x-audio-url',
+      'x-tts-audio-url',
+      'location',
+    ]),
+  };
+
+  const blob = await response.blob();
+  return { blob, meta };
 }
 
 /** 从 Blob 生成可播放 URL，调用方负责 URL.revokeObjectURL。 */

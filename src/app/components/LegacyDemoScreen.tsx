@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import SiriWave from 'siriwave';
 import { Heart, Mic, SendHorizontal, X } from 'lucide-react';
 import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
-import { getDemo3PrefetchFilenames } from '../utils/demo3Prefetch';
+import { mergeAbortSignals } from '../utils/mergeAbortSignals';
+import { useFeedPrefetchAbortSignal } from '../context/FeedPrefetchAbortContext';
+import { getDemo3PrefetchStaged } from '../utils/demo3Prefetch';
 import { generateText } from '../utils/generateClient';
 import { createMp3ObjectUrl, postPrompt, postPromptTts } from '../utils/promptTtsClient';
 import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
@@ -14,7 +17,7 @@ import {
   DEMO3_FIXED_TEST_REPLY,
   DEMO3_INPUT_PLACEHOLDER,
 } from '../config/prompt.config';
-import { postAsrVoiceInputGenerate, extractAsrText } from '../utils/asrVoiceInputClient';
+import { postAsrVoiceInputGenerate, extractAsrText, extractAsrAudioUrl } from '../utils/asrVoiceInputClient';
 import { arrayBufferToBase64, concatFloat32, encodeWav16Mono, resampleMonoLinear } from '../utils/audioWav';
 import { useDemoDebug } from '../context/DemoDebugContext';
 import { useApiEnv } from '../context/ApiEnvContext';
@@ -42,6 +45,42 @@ function safeJson(value: unknown) {
   } catch {
     return String(value);
   }
+}
+
+/** Branch chosen at ep_2 input — used for double-buffered transition (queue head = next clip while still on ep_2). */
+function getEp2BranchPlan(emotionType: 1 | 2 | 3 | 4 | 5): { head: string; tail: string[] } {
+  if (emotionType === 5) return { head: 'ep_4_1.mp4', tail: ['ep4_2.mp4'] };
+  if (emotionType === 4) return { head: 'ep_4_3.mp4', tail: ['ep_4_4.mp4'] };
+  if (emotionType === 1) return { head: 'ep_3_1.mp4', tail: ['ep_5.mp4', 'ep_last.mp4'] };
+  if (emotionType === 2) return { head: 'ep_3_2.mp4', tail: ['ep_5.mp4', 'ep_last.mp4'] };
+  return { head: 'ep_3_3.mp4', tail: ['ep_5.mp4', 'ep_last.mp4'] };
+}
+
+function waitUntilDemo3VideoHasCurrentData(video: HTMLVideoElement | null, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (!video) {
+      resolve();
+      return;
+    }
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('canplay', finish);
+      video.removeEventListener('loadeddata', finish);
+      video.removeEventListener('error', finish);
+      window.clearTimeout(tid);
+      resolve();
+    };
+    const tid = window.setTimeout(finish, timeoutMs);
+    video.addEventListener('canplay', finish);
+    video.addEventListener('loadeddata', finish);
+    video.addEventListener('error', finish);
+  });
 }
 
 function extractEmotionType(payload: unknown): 1 | 2 | 3 | 4 | 5 | null {
@@ -329,6 +368,8 @@ export function LegacyDemoScreen({
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+  const feedPrefetchAbortSignal = useFeedPrefetchAbortSignal();
+
   const [activeVideoIndex, setActiveVideoIndex] = useState(() => {
     const start = demo.startIndex ?? 1;
     return Math.max(0, start - 1);
@@ -336,6 +377,22 @@ export function LegacyDemoScreen({
 
   const playlist = demo.videos?.length ? demo.videos : demo.videoBg ? [demo.videoBg] : [];
   const [resolvedMediaMap, setResolvedMediaMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (isActive) return;
+    setResolvedMediaMap((prev) => {
+      for (const v of Object.values(prev)) {
+        if (typeof v === 'string' && v.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(v);
+          } catch {
+            // ignore
+          }
+        }
+      }
+      return {};
+    });
+  }, [isActive]);
 
   const demo3UrlByFilename: Record<string, string> = {};
   if (isDemo3) {
@@ -367,9 +424,19 @@ export function LegacyDemoScreen({
   const [legacyShowReplay, setLegacyShowReplay] = useState(false);
   const legacyReplayPendingRef = useRef(false);
   const [demo3Lead, setDemo3Lead] = useState<0 | 1>(0);
+  const demo3LeadRef = useRef(demo3Lead);
+  useEffect(() => {
+    demo3LeadRef.current = demo3Lead;
+  }, [demo3Lead]);
   const [demo3SlotSrc, setDemo3SlotSrc] = useState<[string, string]>(['', '']);
   const [demo3IsLoading, setDemo3IsLoading] = useState(false);
   const demo3ReplayTokenRef = useRef(0);
+  /** Abort index_1/ep_2 resolve+warmup started by replay-from-start when user leaves the demo. */
+  const demo3ReplayLoadAbortRef = useRef<AbortController | null>(null);
+  /** Demo3 graph prefetch: abort only when leaving the demo (not on every branch/queue change). */
+  const demo3MediaPrefetchAbortRef = useRef<AbortController | null>(null);
+  /** Bumped each time this Legacy screen becomes the active feed demo; stale prefetch waves ignore putResolved. */
+  const demo3PrefetchSessionRef = useRef(0);
   const [demo3IsCoverVisible, setDemo3IsCoverVisible] = useState(true);
   const demo3LastUserReplyRef = useRef('');
   const demo3LastEmotionTypeRef = useRef<1 | 2 | 3 | 4 | 5>(5);
@@ -563,6 +630,9 @@ export function LegacyDemoScreen({
     if (playlist.length === 0) return;
 
     const controller = new AbortController();
+    const loadSignal = feedPrefetchAbortSignal
+      ? mergeAbortSignals([controller.signal, feedPrefetchAbortSignal])
+      : controller.signal;
     const putResolved = (direct: string, resolved: string) => {
       if (!direct || !resolved || direct === resolved) return;
       setResolvedMediaMap((prev) => (prev[direct] === resolved ? prev : { ...prev, [direct]: resolved }));
@@ -572,14 +642,14 @@ export function LegacyDemoScreen({
       if (demo.bgmUrl) {
         const bgmResolved = await resolveCachedMediaUrl(demo.bgmUrl, {
           kind: 'audio',
-          signal: controller.signal,
+          signal: loadSignal,
         });
         putResolved(demo.bgmUrl, bgmResolved);
       }
     })();
 
     return () => controller.abort();
-  }, [isActive, isDemo3, demo.bgmUrl, playlist]); // playlist change reflects new URLs
+  }, [isActive, isDemo3, demo.bgmUrl, playlist, feedPrefetchAbortSignal]); // playlist change reflects new URLs
 
   useEffect(() => {
     if (isDemo3) return;
@@ -615,7 +685,18 @@ export function LegacyDemoScreen({
     const sig = `${lead}|${demo3CurrentFilename}`;
     const jumped = demo3PlaySigRef.current !== sig;
     demo3PlaySigRef.current = sig;
-    if (jumped) active.currentTime = 0;
+    if (jumped) {
+      try {
+        const t = Number(active.currentTime);
+        const rs = active.readyState;
+        // Skip redundant seek-to-0 (causes one-frame black) when the slot was already warmed at t≈0 (ep_2 → branch flip).
+        if (!Number.isFinite(t) || t > 0.25 || rs < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          active.currentTime = 0;
+        }
+      } catch {
+        active.currentTime = 0;
+      }
+    }
     void active.play().catch(() => undefined);
   }, [isDemo3, isActive, isPausedByUser, demo3ShowReplay, demo3Lead, demo3CurrentFilename, demo3SlotSrc, demo.playVideoAudio]);
 
@@ -700,6 +781,15 @@ export function LegacyDemoScreen({
   }, [isActive]);
 
   useEffect(() => {
+    if (isActive || isDemo3) return;
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    v.removeAttribute('src');
+    void v.load();
+  }, [isActive, isDemo3]);
+
+  useEffect(() => {
     if (!isDemo3) return;
     if (!isActive || !demo3PromptActive || !demo3CountdownActive) {
       setDemo3CountdownLeft(DEMO3_PROMPT_COUNTDOWN_SECONDS);
@@ -745,78 +835,126 @@ export function LegacyDemoScreen({
     demo3ShowReplay,
   ]);
 
-  // Prefetch current + all reachable branch heads (Demo3 only).
   useEffect(() => {
-    if (!isDemo3) return;
-    if (!isActive) return;
+    if (!isDemo3 || !isActive) {
+      demo3MediaPrefetchAbortRef.current?.abort();
+      demo3MediaPrefetchAbortRef.current = null;
+      return;
+    }
+    demo3PrefetchSessionRef.current += 1;
+    demo3MediaPrefetchAbortRef.current = new AbortController();
+    return () => {
+      demo3MediaPrefetchAbortRef.current?.abort();
+      demo3MediaPrefetchAbortRef.current = null;
+    };
+  }, [isDemo3, isActive]);
+
+  // Prefetch current + reachable branch heads (Demo3 only). Does NOT abort when only clip/queue changes,
+  // so quick ep_2 → branch transitions keep in-flight downloads; a new wave starts in parallel.
+  useEffect(() => {
+    if (!isDemo3 || !isActive) return;
     if (playlist.length === 0) return;
 
-    const controller = new AbortController();
+    const prefetchSessionAtStart = demo3PrefetchSessionRef.current;
+
     const putResolved = (direct: string, resolved: string) => {
+      if (!isActiveRef.current || demo3PrefetchSessionRef.current !== prefetchSessionAtStart) return;
       if (!direct || !resolved || direct === resolved) return;
       setResolvedMediaMap((prev) => (prev[direct] === resolved ? prev : { ...prev, [direct]: resolved }));
     };
 
-    const filenameSet = new Set<string>([
-      demo3CurrentFilename,
-      ...getDemo3PrefetchFilenames(demo3CurrentFilename, demo3Queue),
-    ]);
-    const directUrls = [...filenameSet]
-      .map((fn) => getDemo3ClipUrl(fn))
-      .filter((u): u is string => Boolean(u));
-    const uniqueDirect = [...new Set(directUrls)];
+    const { warmupFilenames, backgroundFilenames } = getDemo3PrefetchStaged(demo3CurrentFilename, demo3Queue);
 
-    // Combo-1 optimization:
-    // - Critical: warm up current + next (decoder warmup) so playback starts ASAP.
-    // - Background: resolve/cache everything else (no decoder warmup) to avoid blocking critical decode.
-    const processOne = async (direct: string, { warmup }: { warmup: boolean }) => {
-      const resolved = await resolveCachedMediaUrl(direct, { kind: 'video', signal: controller.signal });
-      putResolved(direct, resolved);
-      if (warmup) {
-        await warmupVideoUrl(resolved, { signal: controller.signal, timeoutMs: 12000 });
-      }
-    };
+    const filenamesToDirect = (filenames: string[]) =>
+      filenames.map((fn) => getDemo3ClipUrl(fn)).filter((u): u is string => Boolean(u));
 
-    const runPool = async (items: string[], concurrency: number) => {
-      const q = [...items];
-      await Promise.all(
-        Array.from({ length: concurrency }, async () => {
-          while (q.length > 0) {
-            const item = q.shift();
-            if (!item) break;
-            try {
-              await processOne(item, { warmup: false });
-            } catch {
-              // ignore per-asset failures
-            }
-          }
-        })
-      );
+    const dedupeUrlsPreserveOrder = (urls: string[]) => {
+      const seen = new Set<string>();
+      return urls.filter((u) => {
+        if (seen.has(u)) return false;
+        seen.add(u);
+        return true;
+      });
     };
 
     void (async () => {
-      try {
-        const criticalFilenames = [demo3CurrentFilename, demo3Queue[0]].filter(Boolean) as string[];
-        const criticalDirect = criticalFilenames
-          .map((fn) => getDemo3ClipUrl(fn))
-          .filter((u): u is string => Boolean(u));
+      if (!isActiveRef.current) return;
+      const controller = demo3MediaPrefetchAbortRef.current;
+      if (!controller || controller.signal.aborted) return;
+      if (demo3PrefetchSessionRef.current !== prefetchSessionAtStart) return;
+      const { signal } = controller;
+      const loadSignal = feedPrefetchAbortSignal
+        ? mergeAbortSignals([signal, feedPrefetchAbortSignal])
+        : signal;
+      if (loadSignal.aborted) return;
 
-        // 1) Critical warmup sequential (lower decoder pressure).
-        for (const direct of criticalDirect) {
-          if (controller.signal.aborted) break;
-          await processOne(direct, { warmup: true });
+      const processResolve = async (direct: string) => {
+        const resolved = await resolveCachedMediaUrl(direct, { kind: 'video', signal: loadSignal });
+        putResolved(direct, resolved);
+        return resolved;
+      };
+
+      const processWarmupResolved = async (resolved: string) => {
+        await warmupVideoUrl(resolved, { signal: loadSignal, timeoutMs: 12000 });
+      };
+
+      const processResolveAndWarmup = async (direct: string) => {
+        const resolved = await processResolve(direct);
+        if (!loadSignal.aborted) {
+          await processWarmupResolved(resolved);
         }
+        return resolved;
+      };
 
-        // 2) Background resolve/cache without warmup.
-        const background = uniqueDirect.filter((u) => !criticalDirect.includes(u));
-        await runPool(background, 2);
+      try {
+        const warmupDirect = dedupeUrlsPreserveOrder(filenamesToDirect(warmupFilenames));
+        const backgroundDirect = dedupeUrlsPreserveOrder(filenamesToDirect(backgroundFilenames));
+
+        // index_1：先完成 index_1 拉取 + 解码预热以便开播；随后在同一轮 Promise.all 内并行：
+        // - ep_2（最先 push，优先级最高）
+        // - ep_4_1、ep_4_3、ep_3_1、ep_3_2、ep_3_3（彼此并行，不对它们做顺序 await）
+        const isIndex1PrefetchWave =
+          demo3CurrentFilename === 'index_1.mp4' &&
+          warmupFilenames[0] === 'index_1.mp4' &&
+          warmupFilenames.length === 1 &&
+          warmupDirect.length >= 1;
+
+        if (isIndex1PrefetchWave && !loadSignal.aborted) {
+          const rIndex = await processResolve(warmupDirect[0]);
+          if (loadSignal.aborted) return;
+          await processWarmupResolved(rIndex);
+          if (loadSignal.aborted) return;
+
+          const ep2Direct = getDemo3ClipUrl('ep_2.mp4');
+          const parallelWave = dedupeUrlsPreserveOrder([
+            ...(ep2Direct ? [ep2Direct] : []),
+            ...backgroundDirect.filter((u) => u !== ep2Direct),
+          ]);
+
+          await Promise.allSettled(
+            parallelWave.map((direct) => processResolveAndWarmup(direct)),
+          );
+        } else if (warmupDirect.length >= 1 && !loadSignal.aborted) {
+          // 与 index_1 同一套：只预热当前播放片，再并行 resolve + 解码预热 queue[0] 与所有可达分支头。
+          const rCur = await processResolve(warmupDirect[0]);
+          if (loadSignal.aborted) return;
+          await processWarmupResolved(rCur);
+          if (loadSignal.aborted) return;
+          if (backgroundDirect.length > 0) {
+            await Promise.allSettled(
+              backgroundDirect.map((direct) => processResolveAndWarmup(direct)),
+            );
+          }
+        } else if (!loadSignal.aborted && backgroundDirect.length > 0) {
+          await Promise.allSettled(
+            backgroundDirect.map((direct) => processResolveAndWarmup(direct)),
+          );
+        }
       } catch {
         // ignore
       }
     })();
-
-    return () => controller.abort();
-  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, playlist]);
+  }, [isDemo3, isActive, demo3CurrentFilename, demo3Queue, playlist, feedPrefetchAbortSignal]);
 
   useEffect(() => {
     if (!isDemo3 || !isActive) return;
@@ -855,29 +993,42 @@ export function LegacyDemoScreen({
     setDemo3Queue(queue);
   };
 
+  /** ep_2 → branch: preload branch on the hidden slot (queue=[branch,...]) while filename stays ep_2, then flip lead. */
+  const runEp2BranchTransition = useCallback(async (emotionType: 1 | 2 | 3 | 4 | 5) => {
+    if (!isActiveRef.current) return;
+    const plan = getEp2BranchPlan(emotionType);
+    setDemo3IsCoverVisible(true);
+    flushSync(() => {
+      setDemo3Queue([plan.head, ...plan.tail]);
+    });
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    const lead = demo3LeadRef.current;
+    const inactiveIdx: 0 | 1 = lead === 0 ? 1 : 0;
+    const inactiveEl = inactiveIdx === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+    await waitUntilDemo3VideoHasCurrentData(inactiveEl, 5200);
+    if (!isActiveRef.current) return;
+    flushSync(() => {
+      setDemo3Lead(inactiveIdx);
+      setDemo3CurrentFilename(plan.head);
+      setDemo3Queue(plan.tail);
+    });
+    const newActiveEl = inactiveIdx === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+    if (newActiveEl && typeof newActiveEl.requestVideoFrameCallback === 'function') {
+      await new Promise<void>((resolve) => {
+        newActiveEl.requestVideoFrameCallback(() => resolve());
+      });
+    } else {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    }
+  }, []);
+
   const applyEmotionBranch = (emotionType: 1 | 2 | 3 | 4 | 5) => {
-    // Branching model as described by user.
-    if (emotionType === 5) {
-      // Retry mechanism: ep_4_1 -> ep_4_2(ep4_2) then prompt again.
-      demo3GoTo('ep_4_1.mp4', ['ep4_2.mp4']);
-      return;
-    }
-
-    if (emotionType === 4) {
-      // ep_4_3 -> ep_4_4 (prompt during ep_4_4)
-      demo3GoTo('ep_4_3.mp4', ['ep_4_4.mp4']);
-      return;
-    }
-
-    if (emotionType === 1) {
-      demo3GoTo('ep_3_1.mp4', ['ep_5.mp4', 'ep_last.mp4']);
-      return;
-    }
-    if (emotionType === 2) {
-      demo3GoTo('ep_3_2.mp4', ['ep_5.mp4', 'ep_last.mp4']);
-      return;
-    }
-    demo3GoTo('ep_3_3.mp4', ['ep_5.mp4', 'ep_last.mp4']);
+    const plan = getEp2BranchPlan(emotionType);
+    demo3GoTo(plan.head, plan.tail);
   };
 
   const applyEmotionAfterEp44 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
@@ -950,7 +1101,7 @@ export function LegacyDemoScreen({
       return;
     }
     if (clip === 'ep_2.mp4') {
-      applyEmotionBranch(emotionType);
+      void runEp2BranchTransition(emotionType);
       return;
     }
     if (clip === 'ep_4_4.mp4') {
@@ -974,6 +1125,30 @@ export function LegacyDemoScreen({
     el.removeAttribute('src');
     void el.load();
   }, []);
+
+  useEffect(() => {
+    if (isActive || !isDemo3) return;
+    demo3ReplayLoadAbortRef.current?.abort();
+    demo3ReplayLoadAbortRef.current = null;
+    demo3GenerateAbortRef.current?.abort();
+    demo3GenerateAbortRef.current = null;
+    setIsDemo3Generating(false);
+    demo3NarrationAbortRef.current?.abort();
+    demo3NarrationAbortRef.current = null;
+    flushDemo3NarrationAudioElement();
+    const v0 = demo3Video0Ref.current;
+    const v1 = demo3Video1Ref.current;
+    if (v0) {
+      v0.pause();
+      v0.removeAttribute('src');
+      void v0.load();
+    }
+    if (v1) {
+      v1.pause();
+      v1.removeAttribute('src');
+      void v1.load();
+    }
+  }, [isActive, isDemo3, flushDemo3NarrationAudioElement]);
 
   const handleDemo3ReplayFromStart = () => {
     demo3GenerateAbortRef.current?.abort();
@@ -1003,7 +1178,12 @@ export function LegacyDemoScreen({
     setDemo3IsLoading(true);
 
     const token = ++demo3ReplayTokenRef.current;
+    demo3ReplayLoadAbortRef.current?.abort();
     const controller = new AbortController();
+    demo3ReplayLoadAbortRef.current = controller;
+    const replayLoadSignal = feedPrefetchAbortSignal
+      ? mergeAbortSignals([controller.signal, feedPrefetchAbortSignal])
+      : controller.signal;
 
     const waitForReady = (video: HTMLVideoElement, timeoutMs: number) =>
       new Promise<void>((resolve) => {
@@ -1030,17 +1210,17 @@ export function LegacyDemoScreen({
         const ep2Direct = getDemo3ClipUrl('ep_2.mp4');
         if (!indexDirect) return;
 
-        const indexResolved = await resolveCachedMediaUrl(indexDirect, { kind: 'video', signal: controller.signal });
+        const indexResolved = await resolveCachedMediaUrl(indexDirect, { kind: 'video', signal: replayLoadSignal });
         if (token !== demo3ReplayTokenRef.current) return;
         // Warm up decoder so first frame is ready ASAP.
-        await warmupVideoUrl(indexResolved, { signal: controller.signal, timeoutMs: 12000 });
+        await warmupVideoUrl(indexResolved, { signal: replayLoadSignal, timeoutMs: 12000 });
         if (token !== demo3ReplayTokenRef.current) return;
 
         const ep2Resolved = ep2Direct
-          ? await resolveCachedMediaUrl(ep2Direct, { kind: 'video', signal: controller.signal })
+          ? await resolveCachedMediaUrl(ep2Direct, { kind: 'video', signal: replayLoadSignal })
           : '';
         if (token !== demo3ReplayTokenRef.current) return;
-        if (ep2Resolved) await warmupVideoUrl(ep2Resolved, { signal: controller.signal, timeoutMs: 12000 });
+        if (ep2Resolved) await warmupVideoUrl(ep2Resolved, { signal: replayLoadSignal, timeoutMs: 12000 });
         if (token !== demo3ReplayTokenRef.current) return;
 
         // Reset playback state AFTER we have something ready to render.
@@ -1065,7 +1245,9 @@ export function LegacyDemoScreen({
       } catch {
         // ignore
       } finally {
-        controller.abort();
+        if (demo3ReplayLoadAbortRef.current === controller) {
+          demo3ReplayLoadAbortRef.current = null;
+        }
         if (token === demo3ReplayTokenRef.current) setDemo3IsLoading(false);
       }
     })();
@@ -1144,7 +1326,12 @@ export function LegacyDemoScreen({
 
     // Stop prompt UI before transitioning.
     demo3StopPrompt();
-    applyDemo3EmotionAtCurrentClip(demo3CurrentFilename, emotionType);
+    const clip = demo3ClipRef.current;
+    if (clip === 'ep_2.mp4') {
+      await runEp2BranchTransition(emotionType);
+      return;
+    }
+    applyDemo3EmotionAtCurrentClip(clip, emotionType);
   };
 
   useEffect(() => {
@@ -1244,7 +1431,7 @@ export function LegacyDemoScreen({
         pushDebug({
           kind: 'api_response',
           title: 'Prompt OK (Demo3 ep_5 narration)',
-          body: text,
+          body: `【旁白词】\n${text}`,
         });
 
         const cloneBody = {
@@ -1261,7 +1448,7 @@ export function LegacyDemoScreen({
           title: 'POST /api/v1/prompt-tts (Demo3 ep_5 narration · clone)',
           body: safeJson(cloneBody),
         });
-        const blob = await postPromptTts(cloneBody, {
+        const { blob } = await postPromptTts(cloneBody, {
           baseUrl: generateApiBaseUrl,
           signal: controller.signal,
         });
@@ -1273,7 +1460,7 @@ export function LegacyDemoScreen({
         pushDebug({
           kind: 'api_response',
           title: 'prompt-tts OK (Demo3 ep_5 narration · clone)',
-          body: `audio/mpeg blob: ${blob.size} bytes`,
+          body: `audio/mpeg blob: ${blob.size} bytes\n\n【语音链接】（本页可播放的 blob）\n${url}\n\n【旁白词】\n${text}`,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : safeJson(e);
@@ -1355,23 +1542,33 @@ export function LegacyDemoScreen({
     const activeVideo = activeSlot === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
     if (!activeVideo) return;
 
-    const handleFrameReady = () => {
-      if (activeVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    let cancelled = false;
+    const dismissCoverAfterPaint = () => {
+      if (cancelled) return;
+      if (activeVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      const hide = () => {
+        if (cancelled) return;
         setDemo3IsCoverVisible(false);
+      };
+      if (typeof activeVideo.requestVideoFrameCallback === 'function') {
+        activeVideo.requestVideoFrameCallback(() => hide());
+      } else {
+        requestAnimationFrame(() => requestAnimationFrame(hide));
       }
     };
 
     // The clip may already be decodable when this Demo becomes active again,
     // so don't rely on a future loadeddata event only.
-    handleFrameReady();
-    activeVideo.addEventListener('loadeddata', handleFrameReady);
-    activeVideo.addEventListener('canplay', handleFrameReady);
-    activeVideo.addEventListener('playing', handleFrameReady);
+    dismissCoverAfterPaint();
+    activeVideo.addEventListener('loadeddata', dismissCoverAfterPaint);
+    activeVideo.addEventListener('canplay', dismissCoverAfterPaint);
+    activeVideo.addEventListener('playing', dismissCoverAfterPaint);
 
     return () => {
-      activeVideo.removeEventListener('loadeddata', handleFrameReady);
-      activeVideo.removeEventListener('canplay', handleFrameReady);
-      activeVideo.removeEventListener('playing', handleFrameReady);
+      cancelled = true;
+      activeVideo.removeEventListener('loadeddata', dismissCoverAfterPaint);
+      activeVideo.removeEventListener('canplay', dismissCoverAfterPaint);
+      activeVideo.removeEventListener('playing', dismissCoverAfterPaint);
     };
   }, [isDemo3, isActive, demo3Lead, demo3SlotSrc]);
 
@@ -1386,33 +1583,51 @@ export function LegacyDemoScreen({
     const next = demo3Queue[0];
     if (next) {
       const inactiveIdx = demo3Lead === 0 ? 1 : 0;
-      const inactiveEl = inactiveIdx === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+      const getInactiveEl = () =>
+        inactiveIdx === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
 
       const proceed = () => {
+        setDemo3IsCoverVisible(true);
         setDemo3Lead((l) => (l === 0 ? 1 : 0));
         setDemo3CurrentFilename(next);
         setDemo3Queue((q) => q.slice(1));
       };
 
-      if (!inactiveEl || inactiveEl.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
-        proceed();
+      const tryProceedWhenReady = (inactiveEl: HTMLVideoElement) => {
+        if (inactiveEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          proceed();
+          return;
+        }
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          inactiveEl.removeEventListener('canplay', finish);
+          inactiveEl.removeEventListener('loadeddata', finish);
+          inactiveEl.removeEventListener('error', finish);
+          window.clearTimeout(tid);
+          proceed();
+        };
+        const tid = window.setTimeout(finish, 3200);
+        inactiveEl.addEventListener('canplay', finish);
+        inactiveEl.addEventListener('loadeddata', finish);
+        inactiveEl.addEventListener('error', finish);
+      };
+
+      setDemo3IsCoverVisible(true);
+      const inactiveEl = getInactiveEl();
+      if (inactiveEl) {
+        tryProceedWhenReady(inactiveEl);
         return;
       }
-
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        inactiveEl.removeEventListener('canplay', finish);
-        inactiveEl.removeEventListener('loadeddata', finish);
-        inactiveEl.removeEventListener('error', finish);
-        window.clearTimeout(tid);
-        proceed();
-      };
-      const tid = window.setTimeout(finish, 2500);
-      inactiveEl.addEventListener('canplay', finish);
-      inactiveEl.addEventListener('loadeddata', finish);
-      inactiveEl.addEventListener('error', finish);
+      window.setTimeout(() => {
+        const el = getInactiveEl();
+        if (!el) {
+          proceed();
+          return;
+        }
+        tryProceedWhenReady(el);
+      }, 48);
       return;
     }
     if (
@@ -1503,7 +1718,7 @@ export function LegacyDemoScreen({
         {isDemo3 && (
           <audio
             ref={demo3NarrationAudioRef}
-            src={demo3NarrationAudioUrl ?? undefined}
+            src={isActive ? (demo3NarrationAudioUrl ?? undefined) : undefined}
             preload="auto"
           />
         )}
@@ -1511,8 +1726,8 @@ export function LegacyDemoScreen({
           <>
             <video
               ref={demo3Video0Ref}
-              src={demo3SlotSrc[0] || undefined}
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+              src={isActive ? demo3SlotSrc[0] || undefined : undefined}
+              className={`absolute inset-0 w-full h-full object-cover ${
                 demo3Lead === 0 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
               autoPlay={false}
@@ -1521,14 +1736,11 @@ export function LegacyDemoScreen({
               playsInline
               preload="auto"
               onEnded={handleDemo3VideoEnded}
-              onLoadedData={() => {
-                if (demo3Lead === 0) setDemo3IsCoverVisible(false);
-              }}
             />
             <video
               ref={demo3Video1Ref}
-              src={demo3SlotSrc[1] || undefined}
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+              src={isActive ? demo3SlotSrc[1] || undefined : undefined}
+              className={`absolute inset-0 w-full h-full object-cover ${
                 demo3Lead === 1 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
               autoPlay={false}
@@ -1537,15 +1749,12 @@ export function LegacyDemoScreen({
               playsInline
               preload="auto"
               onEnded={handleDemo3VideoEnded}
-              onLoadedData={() => {
-                if (demo3Lead === 1) setDemo3IsCoverVisible(false);
-              }}
             />
           </>
         ) : (
           <video
             ref={videoRef}
-            src={activeSrc}
+            src={isActive ? activeSrc : undefined}
             className="w-full h-full object-cover opacity-85"
             autoPlay={isActive}
             loop={false}
@@ -1612,24 +1821,16 @@ export function LegacyDemoScreen({
         </div>
       )}
 
-      <AnimatePresence>
-        {isDemo3 && demo3IsCoverVisible && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
-            className="absolute inset-0 z-[5] pointer-events-none"
-          >
-            <img src={DEMO3_COVER_URL} alt="Demo 3 cover" className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/38" />
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="w-14 h-14 rounded-full border border-white/20 border-t-white/85 animate-spin" />
-              <p className="mt-3 text-[10px] uppercase tracking-[0.24em] text-white/80">Loading Demo</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {isDemo3 && demo3IsCoverVisible && (
+        <div className="absolute inset-0 z-[12] pointer-events-none bg-black">
+          <img src={DEMO3_COVER_URL} alt="Demo 3 cover" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/38" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="w-14 h-14 rounded-full border border-white/20 border-t-white/85 animate-spin" />
+            <p className="mt-3 text-[10px] uppercase tracking-[0.24em] text-white/80">Loading Demo</p>
+          </div>
+        </div>
+      )}
 
       {isDemo3 && demo3CountdownActive && (
         <>
@@ -1815,10 +2016,13 @@ export function LegacyDemoScreen({
                       emotionType,
                       resultSummary: safeJson(res).slice(0, 1400),
                     });
+                    const asrAudioUrl = extractAsrAudioUrl(res);
                     pushDebug({
                       kind: 'api_response',
                       title: 'ASR voice-input-generate OK (Demo3)',
-                      body: `${safeJson(res)}\nASR: ${asrText || '(empty)'}\nresolved emotion_type: ${emotionType}`,
+                      body: `【识别词】\n${asrText || '(空)'}\n\n【语音链接】\n${
+                        asrAudioUrl ?? '（接口未返回常见音频 URL 字段；仅麦克风转写）'
+                      }\n\nemotion_type: ${emotionType}\n\n--- raw (trim) ---\n${safeJson(res).slice(0, 1600)}`,
                     });
 
                     // Match submit behavior: count high emotions and proceed immediately.

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MousePointerClick, Heart } from 'lucide-react';
 import { STORY1_VIDEOS } from '../storyVideos';
 import { useDemoDebug } from '../context/DemoDebugContext';
+import { useFeedPrefetchAbortSignal } from '../context/FeedPrefetchAbortContext';
+import { mergeAbortSignals } from '../utils/mergeAbortSignals';
 import { CUSTOM_LOGO_URL, DEMOS, STORY_CONFIG as STORY_SCENARIO } from '../interactive/scenarios/demoScenarios';
 import { usePlayerShell } from '../interactive/core/usePlayerShell';
 import { PlayerShellCenterOverlay } from '../interactive/core/PlayerShellCenterOverlay';
@@ -266,6 +268,8 @@ export function DemoFeed({
     rapid: false,
   });
   const branchPreloadPromiseRef = useRef<Partial<Record<BranchType, Promise<void>>>>({});
+  /** Aborts hidden branch previews started from the loop phase (not user-entered branches). */
+  const branchLoopPreloadAbortRef = useRef<AbortController | null>(null);
   const branchTransitionRequestIdRef = useRef(0);
   const videoTransitionMaskTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasUserInteractedRef = useRef(
@@ -335,9 +339,43 @@ export function DemoFeed({
             ? resolvedVideoSources.hold
             : resolvedVideoSources.rapid;
   const allowPlayback = isActive && shouldAutoStart;
+  const feedPrefetchAbortSignal = useFeedPrefetchAbortSignal();
+  /** Keep in sync during render so async prefetch cannot run one frame past tab deactivation. */
   const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
+
+  /** Cancels intro/loop fetch() and any merged preload as soon as Demo1 is not the visible feed. */
+  const demo1InactiveAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
-    isActiveRef.current = isActive;
+    if (!isActive) {
+      demo1InactiveAbortRef.current?.abort();
+      demo1InactiveAbortRef.current = null;
+      return;
+    }
+    demo1InactiveAbortRef.current = new AbortController();
+    return () => {
+      demo1InactiveAbortRef.current?.abort();
+      demo1InactiveAbortRef.current = null;
+    };
+  }, [isActive]);
+
+  useEffect(() => {
+    if (isActive) return;
+    branchLoopPreloadAbortRef.current?.abort();
+    branchLoopPreloadAbortRef.current = null;
+    branchPreloadPromiseRef.current = {};
+    const videoA = videoARef.current;
+    const videoB = videoBRef.current;
+    if (videoA) {
+      videoA.pause();
+      videoA.removeAttribute('src');
+      videoA.load();
+    }
+    if (videoB) {
+      videoB.pause();
+      videoB.removeAttribute('src');
+      videoB.load();
+    }
   }, [isActive]);
 
   const { push: pushDebug } = useDemoDebug();
@@ -558,7 +596,7 @@ export function DemoFeed({
     // Combo-1 optimization:
     // - Demo1 warmup is *critical* only when Demo1 is active (preemptable)
     // - When user switches to another demo, abort warmup immediately to free bandwidth/decoder
-    if (!allowPlayback) return;
+    if (!isActive || !shouldAutoStart) return;
 
     let isCancelled = false;
     const controller = new AbortController();
@@ -617,17 +655,17 @@ export function DemoFeed({
       try {
         // Critical stage: index_1 then index_2 (fast path for immediate playback).
         const introSource = await withWarmupTimeout('intro', 12000);
-        if (isCancelled) return;
+        if (isCancelled || !isActiveRef.current) return;
         setResolvedVideoSources((previous) => ({ ...previous, intro: introSource }));
         setIsIntroReady(true);
 
         const loopSource = await withWarmupTimeout('loop', 10000);
-        if (isCancelled) return;
+        if (isCancelled || !isActiveRef.current) return;
         setResolvedVideoSources((previous) => ({ ...previous, loop: loopSource }));
 
         // Background stage: branches + cache fill; still abortable via controller.
         await ensureSessionWarmup().catch(() => undefined);
-        if (isCancelled) return;
+        if (isCancelled || !isActiveRef.current) return;
         if (SESSION_WARMUP_STATE === 'done') setResolvedVideoSources({ ...SESSION_RESOLVED_SOURCES });
       } catch {
         // best-effort; playback can still proceed with direct URLs
@@ -638,7 +676,7 @@ export function DemoFeed({
       isCancelled = true;
       controller.abort();
     };
-  }, [allowPlayback]);
+  }, [isActive, shouldAutoStart, feedPrefetchAbortSignal]);
 
   useEffect(() => {
     return () => {
@@ -662,6 +700,19 @@ export function DemoFeed({
       return resolvedVideoSourcesRef.current[assetKey];
     }
 
+    if (!isActiveRef.current) {
+      return directSource;
+    }
+
+    const gateSignal = demo1InactiveAbortRef.current?.signal;
+    const mergedParts = [signal, gateSignal, feedPrefetchAbortSignal].filter((s): s is AbortSignal => Boolean(s));
+    const effectiveSignal =
+      mergedParts.length === 0 ? undefined : mergedParts.length === 1 ? mergedParts[0] : mergeAbortSignals(mergedParts);
+
+    if (effectiveSignal?.aborted) {
+      return directSource;
+    }
+
     if (SESSION_PRELOAD_PROMISES[assetKey]) {
       logVideoWarmup(`${assetKey} promise reuse`);
       return SESSION_PRELOAD_PROMISES[assetKey]!;
@@ -671,6 +722,9 @@ export function DemoFeed({
       if (typeof window === 'undefined') {
         return directSource;
       }
+      if (effectiveSignal?.aborted) {
+        return directSource;
+      }
 
       try {
         let videoBlob: Blob | null = null;
@@ -678,12 +732,16 @@ export function DemoFeed({
         const requestInit: RequestInit = {
           mode: 'cors',
           credentials: 'omit',
-          signal,
+          ...(effectiveSignal ? { signal: effectiveSignal } : {}),
         };
 
         if ('caches' in window && window.isSecureContext) {
           const cache = await window.caches.open(VIDEO_CACHE_NAME);
           const cachedResponse = await cache.match(directSource);
+
+          if (!isActiveRef.current) {
+            return directSource;
+          }
 
           if (cachedResponse) {
             const isPartial =
@@ -703,6 +761,9 @@ export function DemoFeed({
               logVideoWarmup(`${assetKey} cache hit`, '(IndexedDB)');
               videoBlob = indexedDbBlob;
             } else {
+              if (!isActiveRef.current) {
+                return directSource;
+              }
               logVideoWarmup(`${assetKey} network fetch start`);
               const networkResponse = await fetch(directSource, requestInit);
               if (!networkResponse.ok) {
@@ -721,6 +782,9 @@ export function DemoFeed({
             logVideoWarmup(`${assetKey} cache hit`, '(IndexedDB)');
             videoBlob = indexedDbBlob;
           } else {
+            if (!isActiveRef.current) {
+              return directSource;
+            }
             logVideoWarmup(`${assetKey} network fetch start`, '(IndexedDB fallback)');
             const networkResponse = await fetch(directSource, requestInit);
             if (!networkResponse.ok) {
@@ -736,6 +800,10 @@ export function DemoFeed({
           throw new Error(`Missing blob for ${assetKey}`);
         }
 
+        if (!isActiveRef.current) {
+          return directSource;
+        }
+
         const objectUrl = URL.createObjectURL(videoBlob);
         objectUrlsRef.current.push(objectUrl);
         SESSION_RESOLVED_SOURCES[assetKey] = objectUrl;
@@ -748,7 +816,13 @@ export function DemoFeed({
 
         return objectUrl;
       } catch (error) {
-        logVideoWarmup(`${assetKey} warmup failed`, error instanceof Error ? error.message : '(unknown error)');
+        const isAbort =
+          (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError') ||
+          (error instanceof Error && error.name === 'AbortError');
+        logVideoWarmup(
+          `${assetKey} ${isAbort ? 'warmup aborted' : 'warmup failed'}`,
+          isAbort ? '(demo inactive or preempted)' : error instanceof Error ? error.message : '(unknown error)'
+        );
         return directSource;
       } finally {
         delete SESSION_PRELOAD_PROMISES[assetKey];
@@ -759,47 +833,69 @@ export function DemoFeed({
     return preloadPromise;
   };
 
-  const waitForLoadedData = (src: string) => new Promise<void>((resolve) => {
-    const previewVideo = document.createElement('video');
-    previewVideo.preload = 'auto';
-    previewVideo.muted = true;
-    previewVideo.playsInline = true;
+  const waitForLoadedData = (src: string, signal?: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      if (!isActiveRef.current) {
+        resolve();
+        return;
+      }
+      if (signal?.aborted) {
+        resolve();
+        return;
+      }
+      const previewVideo = document.createElement('video');
+      previewVideo.preload = 'auto';
+      previewVideo.muted = true;
+      previewVideo.playsInline = true;
 
-    let didResolve = false;
-    const cleanup = () => {
-      previewVideo.removeEventListener('loadeddata', onReady);
-      previewVideo.removeEventListener('canplaythrough', onReady);
-      previewVideo.removeEventListener('error', handleError);
-      previewVideo.removeAttribute('src');
+      let didResolve = false;
+      let timeoutId: ReturnType<typeof window.setTimeout> | null = null;
+      const cleanup = () => {
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        timeoutId = null;
+        signal?.removeEventListener('abort', onAbort);
+        previewVideo.removeEventListener('loadeddata', onReady);
+        previewVideo.removeEventListener('canplaythrough', onReady);
+        previewVideo.removeEventListener('error', handleError);
+        previewVideo.removeAttribute('src');
+        previewVideo.load();
+      };
+      const finalize = () => {
+        if (didResolve) return;
+        didResolve = true;
+        cleanup();
+        resolve();
+      };
+      const onAbort = () => finalize();
+      signal?.addEventListener('abort', onAbort);
+      const onReady = () => finalize();
+      const handleError = () => finalize();
+
+      previewVideo.addEventListener('loadeddata', onReady);
+      previewVideo.addEventListener('canplaythrough', onReady);
+      previewVideo.addEventListener('error', handleError);
+      previewVideo.src = src;
       previewVideo.load();
-    };
-    const finalize = () => {
-      if (didResolve) return;
-      didResolve = true;
-      cleanup();
-      resolve();
-    };
-    const onReady = () => finalize();
-    const handleError = () => finalize();
 
-    previewVideo.addEventListener('loadeddata', onReady);
-    previewVideo.addEventListener('canplaythrough', onReady);
-    previewVideo.addEventListener('error', handleError);
-    previewVideo.src = src;
-    previewVideo.load();
+      // Avoid infinite loading UI on bad networks.
+      timeoutId = window.setTimeout(finalize, 15000);
+    });
 
-    // Avoid infinite loading UI on bad networks.
-    window.setTimeout(finalize, 15000);
-  });
-
-  const ensureBranchPlayable = async (branch: BranchType) => {
+  const ensureBranchPlayable = async (branch: BranchType, backgroundSignal?: AbortSignal) => {
     if (branchReadyRef.current[branch]) return;
-    if (branchPreloadPromiseRef.current[branch]) return branchPreloadPromiseRef.current[branch]!;
+
+    if (branchPreloadPromiseRef.current[branch]) {
+      await branchPreloadPromiseRef.current[branch];
+      if (branchReadyRef.current[branch]) return;
+    }
 
     const preloadPromise = (async () => {
+      if (!isActiveRef.current) return;
       const assetKey = getBranchAssetKey(branch);
       const source = await resolveCachedVideo(assetKey);
-      await waitForLoadedData(source);
+      if (!isActiveRef.current || backgroundSignal?.aborted) return;
+      await waitForLoadedData(source, backgroundSignal);
+      if (backgroundSignal?.aborted) return;
       branchReadyRef.current[branch] = true;
     })();
 
@@ -810,10 +906,14 @@ export function DemoFeed({
   };
 
   const preloadAllBranchesForLoop = () => {
+    branchLoopPreloadAbortRef.current?.abort();
+    const controller = new AbortController();
+    branchLoopPreloadAbortRef.current = controller;
+    const { signal } = controller;
     void Promise.allSettled([
-      ensureBranchPlayable('click'),
-      ensureBranchPlayable('hold'),
-      ensureBranchPlayable('rapid'),
+      ensureBranchPlayable('click', signal),
+      ensureBranchPlayable('hold', signal),
+      ensureBranchPlayable('rapid', signal),
     ]);
   };
 
@@ -1228,6 +1328,8 @@ export function DemoFeed({
     }, LOOP_DECISION_WINDOW_MS);
 
     return () => {
+      branchLoopPreloadAbortRef.current?.abort();
+      branchLoopPreloadAbortRef.current = null;
       stopLoopDecision();
       playbackRateTargetRef.current = 1;
       const activeVideo = getActiveVideo();
@@ -1361,13 +1463,13 @@ export function DemoFeed({
             <>
               <video
                 ref={videoARef}
-                src={slotSources[0] ?? undefined}
+                src={isActive ? (slotSources[0] ?? undefined) : undefined}
                 className="absolute inset-0 w-full h-full object-cover transition-opacity duration-180 pointer-events-none"
                 style={{ opacity: activeVideoSlot === 0 ? 0.85 : 0 }}
                 autoPlay={allowPlayback}
                 loop={shouldLoopSlot(0)}
                 playsInline
-                preload="auto"
+                preload={isActive ? 'auto' : 'none'}
                 onEnded={() => {
                   if (activeVideoSlot === 0) handleVideoEnded();
                 }}
@@ -1377,13 +1479,13 @@ export function DemoFeed({
               />
               <video
                 ref={videoBRef}
-                src={slotSources[1] ?? undefined}
+                src={isActive ? (slotSources[1] ?? undefined) : undefined}
                 className="absolute inset-0 w-full h-full object-cover transition-opacity duration-180 pointer-events-none"
                 style={{ opacity: activeVideoSlot === 1 ? 0.85 : 0 }}
                 autoPlay={allowPlayback}
                 loop={shouldLoopSlot(1)}
                 playsInline
-                preload="auto"
+                preload={isActive ? 'auto' : 'none'}
                 onEnded={() => {
                   if (activeVideoSlot === 1) handleVideoEnded();
                 }}

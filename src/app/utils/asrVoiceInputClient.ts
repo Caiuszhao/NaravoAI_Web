@@ -99,3 +99,24 @@ export function extractAsrText(payload: unknown): string | null {
   if (Array.isArray(resultArr) && typeof resultArr[0] === 'string' && resultArr[0].trim()) return resultArr[0].trim();
   return null;
 }
+
+/** Optional HTTP/blob audio URL if the ASR (or chained TTS) response exposes one — for debug panels. */
+export function extractAsrAudioUrl(payload: unknown): string | null {
+  const a = payload as any;
+  const candidates = [
+    a?.audio_url,
+    a?.audioUrl,
+    a?.tts_url,
+    a?.ttsUrl,
+    a?.voice_url,
+    a?.speech_url,
+    a?.output_audio_url,
+    a?.outputAudioUrl,
+    a?.data?.audio_url,
+    a?.data?.tts_url,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return null;
+}

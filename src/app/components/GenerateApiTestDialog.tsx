@@ -101,6 +101,9 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
   const voiceSampleRateRef = useRef<number>(48000);
   const voiceRecordingRef = useRef(false);
   const voicePointerDownRef = useRef(false);
+  const testPanelPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const promptTtsRemoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const promptTtsBlobAudioRef = useRef<HTMLAudioElement | null>(null);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceSubmitting, setVoiceSubmitting] = useState(false);
   const [voicePermissionChecking, setVoicePermissionChecking] = useState(false);
@@ -112,6 +115,24 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
   const [voiceTemperature, setVoiceTemperature] = useState<string>(''); // allow empty
   const [voiceMaxTokens, setVoiceMaxTokens] = useState<string>(''); // allow empty
   const [voiceExtraJson, setVoiceExtraJson] = useState('');
+
+  /** Last successful Prompt+TTS: full request prompt, optional server-returned TTS text / audio URL, blob preview URL filled after setNextAudioBlob. */
+  const [promptTtsLastResult, setPromptTtsLastResult] = useState<{
+    requestPrompt: string;
+    llmText: string;
+    remoteAudioUrl: string | null;
+    blobPreviewUrl: string | null;
+  } | null>(null);
+
+  const playTestPanelAudio = useCallback((el: HTMLAudioElement | null) => {
+    if (!el || !el.src) return;
+    try {
+      el.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    void el.play().catch(() => {});
+  }, []);
 
   const stopVoiceCapture = useCallback(async () => {
     const proc = voiceProcessorRef.current;
@@ -582,14 +603,31 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading('promptTts');
+    setPromptTtsLastResult(null);
     try {
-      const blob = await postPromptTts(body, { baseUrl, signal: controller.signal });
+      const { blob, meta } = await postPromptTts(body, { baseUrl, signal: controller.signal });
       setTextOutput(`MP3 received (${blob.size} bytes, ${blob.type || 'audio/mpeg'})`);
-      setNextAudioBlob(blob);
+      const blobPreviewUrl = createMp3ObjectUrl(blob);
+      setAudioUrl((prev) => {
+        revokeAudio(prev);
+        return blobPreviewUrl;
+      });
+      setPromptTtsLastResult({
+        requestPrompt: payload,
+        llmText: meta.llmOutputText ?? '',
+        remoteAudioUrl: meta.responseAudioUrl ?? null,
+        blobPreviewUrl,
+      });
       pushDebug({
         kind: 'api_response',
         title: 'prompt-tts OK (test dialog · clone)',
-        body: `audio/mpeg blob: ${blob.size} bytes`,
+        body: [
+          `audio/mpeg blob: ${blob.size} bytes`,
+          meta.llmOutputText ? `X-… text: ${meta.llmOutputText.slice(0, 500)}${meta.llmOutputText.length > 500 ? '…' : ''}` : null,
+          meta.responseAudioUrl ? `audio URL (header): ${meta.responseAudioUrl}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : safeJson(e);
@@ -966,8 +1004,118 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
 
           {(tab === 'tts' || tab === 'promptTts') && audioUrl && (
             <div className="rounded-md border border-white/10 bg-white/5 p-3">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/45 mb-2">audio preview</div>
-              <audio controls className="w-full h-9" src={audioUrl} />
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
+                  audio preview · 点击播放
+                </div>
+                <button
+                  type="button"
+                  onClick={() => playTestPanelAudio(testPanelPreviewAudioRef.current)}
+                  className="shrink-0 h-8 px-3 rounded border border-emerald-500/40 text-[11px] text-emerald-100/90 hover:bg-emerald-500/15 transition-colors"
+                >
+                  播放
+                </button>
+              </div>
+              <audio
+                ref={testPanelPreviewAudioRef}
+                controls
+                className="w-full h-9"
+                src={audioUrl}
+                preload="metadata"
+              />
+            </div>
+          )}
+
+          {tab === 'promptTts' && promptTtsLastResult && (
+            <div className="rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-emerald-200/70">prompt-tts 详情</div>
+              <div className="grid gap-1.5">
+                <span className="text-[10px] text-white/45 uppercase tracking-wider">发送给接口的完整 prompt</span>
+                <pre className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/40 border border-white/10 px-2 py-1.5 text-[11px] text-white/80 leading-relaxed">
+                  {promptTtsLastResult.requestPrompt || '(empty)'}
+                </pre>
+              </div>
+              <div className="grid gap-1.5">
+                <span className="text-[10px] text-white/45 uppercase tracking-wider">返回的朗读文本（响应头 X-Prompt-Tts-Text 等）</span>
+                {promptTtsLastResult.llmText ? (
+                  <pre className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/40 border border-white/10 px-2 py-1.5 text-[11px] text-white/85 leading-relaxed">
+                    {promptTtsLastResult.llmText}
+                  </pre>
+                ) : (
+                  <p className="text-[11px] text-white/45 leading-relaxed">
+                    当前响应未携带可读文本头。若需在此展示，可由服务端在 MP3 响应上增加例如{' '}
+                    <code className="text-white/60">X-Prompt-Tts-Text</code>。
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-1.5">
+                <span className="text-[10px] text-white/45 uppercase tracking-wider">语音链接</span>
+                {promptTtsLastResult.remoteAudioUrl ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-white/40">远端（响应头）</span>
+                    <div className="flex flex-wrap gap-2 items-start">
+                      <pre className="flex-1 min-w-0 whitespace-pre-wrap break-all rounded bg-black/40 border border-white/10 px-2 py-1.5 text-[10px] text-emerald-200/90">
+                        {promptTtsLastResult.remoteAudioUrl}
+                      </pre>
+                      <button
+                        type="button"
+                        onClick={() => void navigator.clipboard?.writeText(promptTtsLastResult.remoteAudioUrl ?? '')}
+                        className="shrink-0 h-8 px-2 rounded border border-white/15 text-[10px] text-white/70 hover:bg-white/10"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => playTestPanelAudio(promptTtsRemoteAudioRef.current)}
+                        className="shrink-0 h-8 px-2 rounded border border-emerald-500/40 text-[10px] text-emerald-100/90 hover:bg-emerald-500/15"
+                      >
+                        播放
+                      </button>
+                    </div>
+                    <audio
+                      ref={promptTtsRemoteAudioRef}
+                      controls
+                      className="w-full h-9"
+                      src={promptTtsLastResult.remoteAudioUrl}
+                      preload="none"
+                    />
+                  </div>
+                ) : null}
+                {promptTtsLastResult.blobPreviewUrl ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-white/40">本地预览（blob URL）</span>
+                    <div className="flex flex-wrap gap-2 items-start">
+                      <pre className="flex-1 min-w-0 whitespace-pre-wrap break-all rounded bg-black/40 border border-white/10 px-2 py-1.5 text-[10px] text-white/75">
+                        {promptTtsLastResult.blobPreviewUrl}
+                      </pre>
+                      <button
+                        type="button"
+                        onClick={() => void navigator.clipboard?.writeText(promptTtsLastResult.blobPreviewUrl ?? '')}
+                        className="shrink-0 h-8 px-2 rounded border border-white/15 text-[10px] text-white/70 hover:bg-white/10"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => playTestPanelAudio(promptTtsBlobAudioRef.current)}
+                        className="shrink-0 h-8 px-2 rounded border border-emerald-500/40 text-[10px] text-emerald-100/90 hover:bg-emerald-500/15"
+                      >
+                        播放
+                      </button>
+                    </div>
+                    <audio
+                      ref={promptTtsBlobAudioRef}
+                      controls
+                      className="w-full h-9"
+                      src={promptTtsLastResult.blobPreviewUrl}
+                      preload="metadata"
+                    />
+                  </div>
+                ) : null}
+                {!promptTtsLastResult.remoteAudioUrl && !promptTtsLastResult.blobPreviewUrl ? (
+                  <p className="text-[11px] text-white/45">无可用链接。</p>
+                ) : null}
+              </div>
             </div>
           )}
 

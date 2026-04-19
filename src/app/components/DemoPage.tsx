@@ -1,12 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DemoFeed } from './DemoFeed';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Fingerprint, Crosshair, Play } from 'lucide-react';
 import { LegacyDemoScreen } from './LegacyDemoScreen';
 import { DEMOS, CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
+import { FeedPrefetchAbortProvider } from '../context/FeedPrefetchAbortContext';
 
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
+  const [feedPrefetchSession, setFeedPrefetchSession] = useState(() => ({
+    controller: new AbortController(),
+  }));
+
+  useLayoutEffect(() => {
+    setFeedPrefetchSession((prev) => {
+      prev.controller.abort();
+      return { controller: new AbortController() };
+    });
+  }, [activeDemoIdx]);
   // Entering the demo page should start Demo 1 playback immediately.
   const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(true);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
@@ -50,6 +61,10 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
     if (becameDifferent) setHasActivatedDemoPlayback(true);
   };
 
+  /**
+   * Feed contract: exactly one demo has `isActive`; that screen owns playback + branch prefetch.
+   * Others must stop media and prefetch (see DemoFeed / LegacyDemoScreen `isActive` handlers).
+   */
   const renderDemoScreen = (index: number) => {
     if (index === 0) {
       return (
@@ -76,6 +91,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   }, []);
 
   return (
+    <FeedPrefetchAbortProvider signal={feedPrefetchSession.controller.signal}>
     <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-hidden flex flex-col">
       
       {/* ========================================================= */}
@@ -285,5 +301,6 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
       </div>
       )}
     </div>
+    </FeedPrefetchAbortProvider>
   );
 }
