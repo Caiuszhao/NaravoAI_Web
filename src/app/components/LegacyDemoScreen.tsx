@@ -36,6 +36,17 @@ const ADRIAN_VALE_AVATAR_URL = new URL('../../assets/Adrian_Vale.jpg', import.me
 const ELYSIA_AVATAR_URL = new URL('../../assets/Elysia.jpg', import.meta.url).href;
 const DEMO3_PROMPT_COUNTDOWN_SECONDS = 20;
 const DEMO3_PROMPT_TICK_MS = 100;
+
+/** ~10s input clips: loop only while the 20s countdown still has time left (`countdownLeft > 0`). */
+function isDemo3InputCountdownLoopClip(filename: string): boolean {
+  return (
+    filename === 'ep_2.mp4' ||
+    filename === 'ep4_2.mp4' ||
+    filename === 'ep_4_2.mp4' ||
+    filename === 'ep_4_4.mp4'
+  );
+}
+
 const DEMO_PROMPT_PLACEHOLDER_BY_ID: Record<number, string> = {
   2: 'Send override pattern...',
   3: DEMO3_INPUT_PLACEHOLDER,
@@ -494,6 +505,7 @@ export function LegacyDemoScreen({
   const demo3VoiceChunksRef = useRef<Float32Array[]>([]);
   const demo3VoiceSampleRateRef = useRef<number>(48000);
   const demo3VoicePointerDownRef = useRef(false);
+  const demo3CountdownLeftRef = useRef(demo3CountdownLeft);
 
   useEffect(() => {
     demo3ClipRef.current = demo3CurrentFilename;
@@ -501,6 +513,9 @@ export function LegacyDemoScreen({
   useEffect(() => {
     demo3PromptActiveRef.current = demo3PromptActive;
   }, [demo3PromptActive]);
+  useEffect(() => {
+    demo3CountdownLeftRef.current = demo3CountdownLeft;
+  }, [demo3CountdownLeft]);
   useEffect(() => {
     demo3InputValueRef.current = demo3InputValue;
   }, [demo3InputValue]);
@@ -587,6 +602,12 @@ export function LegacyDemoScreen({
   const demo3CountdownHue = Math.max(0, Math.min(120, demo3CountdownProgress * 120));
   const demo3CountdownColor = `hsl(${demo3CountdownHue} 95% 55%)`;
   const demo3CountdownColorSoft = `hsla(${demo3CountdownHue} 95% 65% / 0.85)`;
+  /** 仅在 20s 倒计时仍有剩余时间时循环；与 `onEnded` 中的守门逻辑一致，避免误切 queue。 */
+  const demo3LoopInputClipDuringCountdown =
+    demo3PromptActive &&
+    demo3CountdownActive &&
+    demo3CountdownLeft > 0 &&
+    isDemo3InputCountdownLoopClip(demo3CurrentFilename);
 
   const comments = MOCK_COMMENTS_BY_DEMO[demo.id] ?? [];
   const characters = CHARACTERS_BY_DEMO[demo.id] ?? [];
@@ -1530,6 +1551,11 @@ export function LegacyDemoScreen({
       return;
     }
 
+    if (demo3CurrentFilename === 'ep4_2.mp4') {
+      demo3StartPrompt();
+      return;
+    }
+
     if (demo3CurrentFilename === 'ep_4_4.mp4') {
       demo3StartPrompt();
       return;
@@ -1540,7 +1566,6 @@ export function LegacyDemoScreen({
       return;
     }
 
-    // Otherwise no prompt unless explicitly triggered (e.g. after ep4_2 ends).
     demo3StopPrompt();
   }, [isDemo3, isActive, demo3CurrentFilename]);
 
@@ -1610,10 +1635,22 @@ export function LegacyDemoScreen({
     const leadEl = demo3Lead === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
     if (e.currentTarget !== leadEl) return;
 
-    if (demo3CurrentFilename === 'ep4_2.mp4') {
-      demo3StartPrompt();
+    const clip = demo3CurrentFilename;
+    if (
+      isDemo3InputCountdownLoopClip(clip) &&
+      demo3PromptActiveRef.current &&
+      demo3CountdownLeftRef.current > 0
+    ) {
+      const v = e.currentTarget;
+      try {
+        v.currentTime = 0;
+      } catch {
+        // ignore
+      }
+      void v.play().catch(() => undefined);
       return;
     }
+
     const next = demo3Queue[0];
     if (next) {
       const inactiveIdx = demo3Lead === 0 ? 1 : 0;
@@ -1765,7 +1802,7 @@ export function LegacyDemoScreen({
                 demo3Lead === 0 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
               autoPlay={false}
-              loop={demo3CurrentFilename === 'ep_last.mp4'}
+              loop={demo3CurrentFilename === 'ep_last.mp4' || demo3LoopInputClipDuringCountdown}
               muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
               playsInline
               preload="auto"
@@ -1778,7 +1815,7 @@ export function LegacyDemoScreen({
                 demo3Lead === 1 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
               autoPlay={false}
-              loop={demo3CurrentFilename === 'ep_last.mp4'}
+              loop={demo3CurrentFilename === 'ep_last.mp4' || demo3LoopInputClipDuringCountdown}
               muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
               playsInline
               preload="auto"
