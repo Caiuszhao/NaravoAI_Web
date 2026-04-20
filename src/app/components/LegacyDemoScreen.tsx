@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import SiriWave from 'siriwave';
 import { Heart, Mic, SendHorizontal, X } from 'lucide-react';
 import { resolveCachedMediaUrl, warmupVideoUrl } from '../utils/mediaCache';
+import { extractEmotionType } from '../utils/extractEmotionType';
 import { mergeAbortSignals } from '../utils/mergeAbortSignals';
 import { useFeedPrefetchAbortSignal } from '../context/FeedPrefetchAbortContext';
 import { getDemo3PrefetchStaged } from '../utils/demo3Prefetch';
@@ -43,7 +44,8 @@ function isDemo3InputCountdownLoopClip(filename: string): boolean {
     filename === 'ep_2.mp4' ||
     filename === 'ep4_2.mp4' ||
     filename === 'ep_4_2.mp4' ||
-    filename === 'ep_4_4.mp4'
+    filename === 'ep_4_4.mp4' ||
+    filename === 'ep_4_5.mp4'
   );
 }
 
@@ -94,35 +96,6 @@ function waitUntilDemo3VideoHasCurrentData(video: HTMLVideoElement | null, timeo
     video.addEventListener('loadeddata', finish);
     video.addEventListener('error', finish);
   });
-}
-
-function extractEmotionType(payload: unknown): 1 | 2 | 3 | 4 | 5 | null {
-  const asAny = payload as any;
-  const direct = Number(asAny?.emotion_type);
-  if (Number.isFinite(direct) && direct >= 1 && direct <= 5) return direct as 1 | 2 | 3 | 4 | 5;
-
-  const raw = Number(asAny?.raw?.emotion_type);
-  if (Number.isFinite(raw) && raw >= 1 && raw <= 5) return raw as 1 | 2 | 3 | 4 | 5;
-
-  const outputText = asAny?.output_text;
-  if (typeof outputText === 'string') {
-    const trimmed = outputText.trim();
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        const parsedEmotion = Number((parsed as any)?.emotion_type);
-        if (Number.isFinite(parsedEmotion) && parsedEmotion >= 1 && parsedEmotion <= 5) {
-          return parsedEmotion as 1 | 2 | 3 | 4 | 5;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    const match = trimmed.match(/emotion_type\D*([1-5])/i);
-    if (match) return Number(match[1]) as 1 | 2 | 3 | 4 | 5;
-  }
-
-  return null;
 }
 
 type Demo3InputComposerProps = {
@@ -451,6 +424,7 @@ export function LegacyDemoScreen({
     // Allow underscore variant for ep_4_2 (actual file is `ep4_2.mp4`)
     demo3UrlByFilename[filename.replace('ep_4_2.mp4', 'ep4_2.mp4')] ??
     demo3UrlByFilename[filename.replace('ep4_2.mp4', 'ep_4_2.mp4')] ??
+    demo3UrlByFilename[filename.replace('ep4_5.mp4', 'ep_4_5.mp4')] ??
     undefined;
 
   const [demo3CurrentFilename, setDemo3CurrentFilename] = useState('index_1.mp4');
@@ -1089,7 +1063,7 @@ export function LegacyDemoScreen({
   const applyEmotionAfterEp44 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
     // Second input point (after first emotion_type=4 -> ep_4_3 -> ep_4_4).
     // - 1/2/3 => A/B/C lines (ep_3_x -> ep_5)
-    // - 4 => D line (ep_3-4 with another prompt)
+    // - 4 => D line: ep_3-4 (playback) then ep_4_5 (20s input gate)
     // - 5 => E line end (ep_3_6)
     if (emotionType === 1) {
       demo3GoTo('ep_3_1.mp4', ['ep_5.mp4', 'ep_last.mp4']);
@@ -1104,14 +1078,14 @@ export function LegacyDemoScreen({
       return;
     }
     if (emotionType === 4) {
-      demo3GoTo('ep_3-4.mp4', []);
+      demo3GoTo('ep_3-4.mp4', ['ep_4_5.mp4']);
       return;
     }
     demo3GoTo('ep_3_6.mp4', []);
   };
 
   const applyEmotionAfterEp34 = (emotionType: 1 | 2 | 3 | 4 | 5) => {
-    // Third input point (after second emotion_type=4 -> ep_3-4).
+    // Third input point on ep_4_5 (after ep_3-4 playback).
     // - 1/2/3 => A/B/C lines (ep_3_x -> ep_5)
     // - 4 => play ep_3_5 then end at ep_5
     // - 5 => E line end (ep_3_6)
@@ -1149,10 +1123,14 @@ export function LegacyDemoScreen({
         return;
       }
       if (emotionType === 4) {
-        demo3GoTo('ep_3-4.mp4', []);
+        demo3GoTo('ep_3-4.mp4', ['ep_4_5.mp4']);
         return;
       }
       demo3GoTo('ep_3_6.mp4', []);
+      return;
+    }
+    if (clip === 'ep_4_5.mp4') {
+      applyEmotionAfterEp34(emotionType);
       return;
     }
     if (clip === 'ep_2.mp4') {
@@ -1161,10 +1139,6 @@ export function LegacyDemoScreen({
     }
     if (clip === 'ep_4_4.mp4') {
       applyEmotionAfterEp44(emotionType);
-      return;
-    }
-    if (clip === 'ep_3-4.mp4') {
-      applyEmotionAfterEp34(emotionType);
       return;
     }
     applyEmotionBranch(emotionType);
@@ -1308,22 +1282,19 @@ export function LegacyDemoScreen({
     })();
   };
 
-  const submitDemo3Input = async () => {
-    if (!demo3PromptActive) return;
-
-    const rawText = demo3InputValue;
-    const trimmed = rawText.trim();
-    demo3LastUserReplyRef.current = trimmed;
+  /** 用 `/api/v1/generate` 得到 emotion_type 再走分支（文字提交与语音 ASR 转写后共用）。 */
+  async function finalizeDemo3ReplyAndBranch(trimmed: string, inputMode: 'text' | 'voice') {
     let emotionType: 1 | 2 | 3 | 4 | 5 = 5;
     let resultSummary = '';
+    demo3LastUserReplyRef.current = trimmed;
+    const clipAtStart = demo3ClipRef.current;
 
-    // Empty input => emotion_type=5 (retry).
     if (trimmed) {
-      const generatePayload = buildDemo3GeneratePrompt(trimmed, demo3CurrentFilename);
+      const generatePayload = buildDemo3GeneratePrompt(trimmed, clipAtStart);
       pushDebug({
         kind: 'api_request',
         title: 'POST /api/v1/generate (Demo3)',
-        body: `${safeJson({ text: generatePayload, viewerReply: trimmed, clip: demo3CurrentFilename })}`,
+        body: `${safeJson({ text: generatePayload, viewerReply: trimmed, clip: clipAtStart, inputMode })}`,
       });
       demo3GenerateAbortRef.current?.abort();
       const controller = new AbortController();
@@ -1360,7 +1331,10 @@ export function LegacyDemoScreen({
       pushDebug({
         kind: 'api_response',
         title: 'Generate skipped (Demo3)',
-        body: 'Empty input — no HTTP call. emotion_type defaults to 5.',
+        body:
+          inputMode === 'voice'
+            ? 'Empty ASR — no HTTP call. emotion_type defaults to 5.'
+            : 'Empty input — no HTTP call. emotion_type defaults to 5.',
       });
     }
 
@@ -1368,8 +1342,8 @@ export function LegacyDemoScreen({
       const history = demo3TurnHistoryRef.current;
       history.push({
         turn: history.length + 1,
-        clip: demo3CurrentFilename,
-        inputMode: 'text',
+        clip: clipAtStart,
+        inputMode,
         userInput: trimmed,
         emotionType,
         resultSummary: resultSummary ? resultSummary.slice(0, 1400) : undefined,
@@ -1379,7 +1353,6 @@ export function LegacyDemoScreen({
     const isHighEmotion = emotionType === 4 || emotionType === 5;
     if (isHighEmotion) setDemo3HighEmotionHits((h) => h + 1);
 
-    // Stop prompt UI before transitioning.
     demo3StopPrompt();
     const clip = demo3ClipRef.current;
     if (clip === 'ep_2.mp4') {
@@ -1387,6 +1360,11 @@ export function LegacyDemoScreen({
       return;
     }
     applyDemo3EmotionAtCurrentClip(clip, emotionType);
+  }
+
+  const submitDemo3Input = async () => {
+    if (!demo3PromptActive) return;
+    await finalizeDemo3ReplyAndBranch(demo3InputValue.trim(), 'text');
   };
 
   useEffect(() => {
@@ -1402,7 +1380,7 @@ export function LegacyDemoScreen({
         pushDebug({
           kind: 'api_error',
           title: 'Demo3 · inject ignored',
-          body: '当前没有打开的输入框（需在 ep_2 / ep4_2 / ep_4_4 / ep_3-4 等输入点）。',
+          body: '当前没有打开的输入框（需在 ep_2 / ep4_2 / ep_4_4 / ep_4_5 等输入点）。',
         });
         return;
       }
@@ -1561,7 +1539,7 @@ export function LegacyDemoScreen({
       return;
     }
 
-    if (demo3CurrentFilename === 'ep_3-4.mp4') {
+    if (demo3CurrentFilename === 'ep_4_5.mp4') {
       demo3StartPrompt();
       return;
     }
@@ -2070,37 +2048,27 @@ export function LegacyDemoScreen({
 
                     const res = await postAsrVoiceInputGenerate(body, { baseUrl: generateApiBaseUrl });
                     const asrText = extractAsrText(res) ?? '';
+                    const trimmed = asrText.trim();
 
-                    if (asrText) {
-                      demo3LastUserReplyRef.current = asrText;
+                    if (trimmed) {
                       setDemo3InputValue(asrText);
                     }
 
-                    const emotionType = extractEmotionType(res) ?? 5;
-                    demo3LastEmotionTypeRef.current = emotionType;
-                    const history = demo3TurnHistoryRef.current;
-                    history.push({
-                      turn: history.length + 1,
-                      clip: demo3ClipRef.current,
-                      inputMode: 'voice',
-                      userInput: asrText || '(empty ASR)',
-                      emotionType,
-                      resultSummary: safeJson(res).slice(0, 1400),
-                    });
                     const asrAudioUrl = extractAsrAudioUrl(res);
                     pushDebug({
                       kind: 'api_response',
                       title: 'ASR voice-input-generate OK (Demo3)',
                       body: `【识别词】\n${asrText || '(空)'}\n\n【语音链接】\n${
                         asrAudioUrl ?? '（接口未返回常见音频 URL 字段；仅麦克风转写）'
-                      }\n\nemotion_type: ${emotionType}\n\n--- raw (trim) ---\n${safeJson(res).slice(0, 1600)}`,
+                      }\n\n--- raw (trim) ---\n${safeJson(res).slice(0, 1600)}`,
                     });
 
-                    // Match submit behavior: count high emotions and proceed immediately.
-                    const isHighEmotion = emotionType === 4 || emotionType === 5;
-                    if (isHighEmotion) setDemo3HighEmotionHits((h) => h + 1);
-                    demo3StopPrompt();
-                    applyDemo3EmotionAtCurrentClipRef.current(demo3ClipRef.current, emotionType);
+                    if (!demo3PromptActiveRef.current) {
+                      return;
+                    }
+
+                    // 与文字提交一致：仅用转写文本调 generate 得 emotion_type，再走分支（不再用 ASR 里的 emotion_type）。
+                    await finalizeDemo3ReplyAndBranch(trimmed, 'voice');
                   } catch (e) {
                     pushDebug({
                       kind: 'api_error',

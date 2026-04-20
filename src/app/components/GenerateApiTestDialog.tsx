@@ -9,7 +9,12 @@ import {
 } from '../utils/promptTtsClient';
 import { PROMPT_TTS_CLONE_MEDIA_TYPE, PROMPT_TTS_CLONE_VOICE_ID } from '../config/ttsCloneVoice';
 import { buildPromptTtsFullPrompt } from '../utils/demo3NarrationPrompt';
-import { DEMO3_FIXED_TEST_REPLY, PROMPT_TTS_SCENE_BACKGROUND } from '../config/prompt.config';
+import {
+  buildDemo3GeneratePrompt,
+  DEMO3_FIXED_TEST_REPLY,
+  PROMPT_TTS_SCENE_BACKGROUND,
+} from '../config/prompt.config';
+import { extractEmotionType } from '../utils/extractEmotionType';
 import { postAsrVoiceInputGenerate, extractAsrText } from '../utils/asrVoiceInputClient';
 import { arrayBufferToBase64, concatFloat32, encodeWav16Mono, resampleMonoLinear } from '../utils/audioWav';
 import { useDemoDebug } from '../context/DemoDebugContext';
@@ -222,6 +227,83 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
     };
   }, [voiceProvider, voiceModel, voiceSystem, voiceTemperature, voiceMaxTokens, voiceExtraJson]);
 
+  /** voice-input-generate 之后与 Demo3 一致：用转写调 generate 解析 emotion_type（不涉及 prompt-tts）。 */
+  const runGenerateAfterVoiceAsr = useCallback(
+    async (voiceRes: unknown, asrText: string, headerLines: string[]) => {
+      const trimmed = asrText.trim();
+      if (!trimmed) {
+        setTextOutput(
+          [
+            ...headerLines,
+            'ASR: (empty)',
+            '',
+            '--- /api/v1/generate ---',
+            'Skipped. emotion_type defaults to 5 (same as Demo3).',
+            '',
+            '--- voice-input-generate (raw) ---',
+            safeJson(voiceRes),
+          ].join('\n')
+        );
+        return;
+      }
+
+      const generatePayload = buildDemo3GeneratePrompt(trimmed, 'ep_2.mp4');
+      pushDebug({
+        kind: 'api_request',
+        title: 'POST /api/v1/generate (test dialog · after ASR)',
+        body: safeJson({
+          text: generatePayload,
+          clip: 'ep_2.mp4',
+          note: 'Demo3 ep_2 rubric — same as production voice→branch path',
+        }),
+      });
+
+      try {
+        const genRes = await generateText({ text: generatePayload }, { baseUrl });
+        const emotion = extractEmotionType(genRes) ?? 5;
+        pushDebug({
+          kind: 'api_response',
+          title: 'Generate OK (test dialog · after ASR)',
+          body: `${safeJson(genRes)}\nemotion_type: ${emotion}`,
+        });
+        setTextOutput(
+          [
+            ...headerLines,
+            `ASR: ${asrText}`,
+            '',
+            '--- /api/v1/generate (Demo3 rubric · clip=ep_2.mp4) ---',
+            `emotion_type: ${emotion}`,
+            '',
+            safeJson(genRes),
+            '',
+            '--- voice-input-generate (raw) ---',
+            safeJson(voiceRes),
+          ].join('\n')
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : safeJson(e);
+        pushDebug({
+          kind: 'api_error',
+          title: 'Generate failed (test dialog · after ASR)',
+          body: msg,
+        });
+        setTextOutput(
+          [
+            ...headerLines,
+            `ASR: ${asrText}`,
+            '',
+            '--- /api/v1/generate ---',
+            `Failed: ${msg}`,
+            '',
+            '--- voice-input-generate (raw) ---',
+            safeJson(voiceRes),
+          ].join('\n')
+        );
+      }
+    },
+    [baseUrl, pushDebug]
+  );
+
   const requestMicThenEnable = useCallback(async () => {
     if (busy || voiceSubmitting) return;
     setTextOutput('');
@@ -381,17 +463,12 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
 
         const res = await postAsrVoiceInputGenerate(body, { baseUrl });
         const asrText = extractAsrText(res) ?? '';
-        setTextOutput([
-          asrText ? `ASR: ${asrText}` : 'ASR: (empty)',
-          '',
-          'Full response:',
-          safeJson(res),
-        ].join('\n'));
         pushDebug({
           kind: 'api_response',
           title: 'voice-input-generate OK (test dialog)',
           body: safeJson(res),
         });
+        await runGenerateAfterVoiceAsr(res, asrText, []);
       } catch (e) {
         const msg = e instanceof Error ? e.message : safeJson(e);
         setTextOutput(msg);
@@ -405,7 +482,7 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
         setVoiceSubmitting(false);
       }
     })();
-  }, [voiceRecording, baseUrl, pushDebug, stopVoiceCapture, buildVoiceLlmOptions]);
+  }, [voiceRecording, baseUrl, pushDebug, stopVoiceCapture, buildVoiceLlmOptions, runGenerateAfterVoiceAsr]);
 
   const submitVoiceFile = useCallback(async () => {
     if (!voiceFile) return;
@@ -455,18 +532,12 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
 
       const res = await postAsrVoiceInputGenerate(body, { baseUrl });
       const asrText = extractAsrText(res) ?? '';
-      setTextOutput([
-        `File: ${voiceFile.name}`,
-        asrText ? `ASR: ${asrText}` : 'ASR: (empty)',
-        '',
-        'Full response:',
-        safeJson(res),
-      ].join('\\n'));
       pushDebug({
         kind: 'api_response',
         title: 'voice-input-generate OK (test dialog · file)',
         body: safeJson(res),
       });
+      await runGenerateAfterVoiceAsr(res, asrText, [`File: ${voiceFile.name}`]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : safeJson(e);
       setTextOutput(msg);
@@ -478,7 +549,17 @@ export function GenerateApiTestDialog({ defaultOpen = true }: { defaultOpen?: bo
     } finally {
       setVoiceSubmitting(false);
     }
-  }, [voiceFile, busy, voiceSubmitting, voiceRecording, voicePermissionChecking, baseUrl, pushDebug, buildVoiceLlmOptions]);
+  }, [
+    voiceFile,
+    busy,
+    voiceSubmitting,
+    voiceRecording,
+    voicePermissionChecking,
+    baseUrl,
+    pushDebug,
+    buildVoiceLlmOptions,
+    runGenerateAfterVoiceAsr,
+  ]);
 
   const runGenerate = async () => {
     const payload = generateTextValue.trim();

@@ -240,7 +240,30 @@ export function DemoDebugPanel() {
             </div>
           </div>
           <div>
-            <p className="text-[9px] uppercase tracking-wider text-white/40 mb-1">ep_3-4（第三次输入）</p>
+            <p className="text-[9px] uppercase tracking-wider text-white/40 mb-1">ep4_2（重试后第二次入口）</p>
+            <div className="flex flex-wrap gap-1">
+              {(
+                [
+                  [1, 'A'],
+                  [2, 'B'],
+                  [3, 'C'],
+                  [4, 'D续'],
+                  [5, 'E'],
+                ] as const
+              ).map(([n, lab]) => (
+                <button
+                  key={`e42-${n}`}
+                  type="button"
+                  onClick={() => injectDemo3Emotion(n)}
+                  className="min-w-[2.75rem] rounded-md border border-white/12 bg-white/5 px-1.5 py-1 text-[10px] font-semibold text-white/90 hover:bg-white/12"
+                >
+                  {n}·{lab}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wider text-white/40 mb-1">ep_4_5（ep_3-4 后 · 第三次输入）</p>
             <div className="flex flex-wrap gap-1">
               {(
                 [
@@ -252,30 +275,7 @@ export function DemoDebugPanel() {
                 ] as const
               ).map(([n, lab]) => (
                 <button
-                  key={`e34-${n}`}
-                  type="button"
-                  onClick={() => injectDemo3Emotion(n)}
-                  className="min-w-[2.75rem] rounded-md border border-white/12 bg-white/5 px-1.5 py-1 text-[10px] font-semibold text-white/90 hover:bg-white/12"
-                >
-                  {n}·{lab}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-wider text-white/40 mb-1">ep4_2（重试后第二次入口）</p>
-            <div className="flex flex-wrap gap-1">
-              {(
-                [
-                  [1, 'A'],
-                  [2, 'B'],
-                  [3, 'C'],
-                  [4, 'D'],
-                  [5, 'E'],
-                ] as const
-              ).map(([n, lab]) => (
-                <button
-                  key={`42-${n}`}
+                  key={`e45-${n}`}
                   type="button"
                   onClick={() => injectDemo3Emotion(n)}
                   className="min-w-[2.75rem] rounded-md border border-white/12 bg-white/5 px-1.5 py-1 text-[10px] font-semibold text-white/90 hover:bg-white/12"

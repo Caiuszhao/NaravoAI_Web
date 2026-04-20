@@ -21,6 +21,7 @@ export const DEMO3_VIDEOS = [
   'ep_3_2.mp4',
   'ep_3_3.mp4',
   'ep_3-4.mp4',
+  'ep_4_5.mp4',
   'ep_3_5.mp4',
   'ep_3_6.mp4',
   'ep4_2.mp4',

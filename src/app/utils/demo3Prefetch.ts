@@ -17,12 +17,12 @@ export function getDemo3PrefetchFilenames(currentFilename: string, queue: string
       break;
     case 'ep_2.mp4':
       out.add('ep_4_1.mp4');
-      out.add('ep_4_3.mp4');  
+      out.add('ep_4_3.mp4');
       out.add('ep_3_1.mp4');
       out.add('ep_3_2.mp4');
       out.add('ep_3_3.mp4');
       break;
-    case 'ep4_2.mp4':      // this is the input video
+    case 'ep4_2.mp4':
       out.add('ep_3_1.mp4');
       out.add('ep_3_2.mp4');
       out.add('ep_3_3.mp4');
@@ -31,7 +31,7 @@ export function getDemo3PrefetchFilenames(currentFilename: string, queue: string
       out.add('ep_5.mp4');
       break;
     case 'ep_4_1.mp4':
-      out.add('ep4_2.mp4');  // this is the input video
+      out.add('ep4_2.mp4');
       // Prefetch outcomes of the next decision point (ep4_2) while retry clip is playing.
       out.add('ep_3_1.mp4');
       out.add('ep_3_2.mp4');
@@ -48,6 +48,7 @@ export function getDemo3PrefetchFilenames(currentFilename: string, queue: string
       out.add('ep_3_3.mp4');
       out.add('ep_3_6.mp4');
       out.add('ep_3-4.mp4');
+      out.add('ep_4_5.mp4');
       out.add('ep_5.mp4');
       break;
     case 'ep_4_4.mp4':    // this is the input video
@@ -56,13 +57,24 @@ export function getDemo3PrefetchFilenames(currentFilename: string, queue: string
       out.add('ep_3_3.mp4');
       out.add('ep_3_6.mp4');
       out.add('ep_3-4.mp4');
+      out.add('ep_4_5.mp4');
       out.add('ep_5.mp4');
       break;
     case 'ep_3-4.mp4':
+      out.add('ep_4_5.mp4');
+      out.add('ep_3_5.mp4');
       out.add('ep_3_1.mp4');
       out.add('ep_3_2.mp4');
       out.add('ep_3_3.mp4');
+      out.add('ep_3_6.mp4');
+      out.add('ep_5.mp4');
+      break;
+    case 'ep_4_5.mp4':
+      // D 续常见落点：emotion 4 → ep_3_5；优先预加载，其余分支并行跟上。
       out.add('ep_3_5.mp4');
+      out.add('ep_3_1.mp4');
+      out.add('ep_3_2.mp4');
+      out.add('ep_3_3.mp4');
       out.add('ep_3_6.mp4');
       out.add('ep_5.mp4');
       break;

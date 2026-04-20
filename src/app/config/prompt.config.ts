@@ -281,7 +281,7 @@ export const DEMO3_INPUT_PLACEHOLDER = 'Say something...';
  * 手工/调试走线说明。D 线需多次注入；「F 线」按产品习惯记为 **E 终局**（ep_3_6）。
  */
 export const DEMO3_BRANCH_TEST_PLAYBOOK = `
-Demo3 分支调试（每线可走完后点重开，再在 ep_2 或后续输入点注入）
+Demo3 分支调试（每线可走完后点重开，再在 ep_2 / ep4_2 / ep_4_4 / ep_4_5 等输入点注入；ep_3-4 为过场）
 
 固定回复句（与测试页默认一致）：
 ${DEMO3_FIXED_TEST_REPLY}
@@ -289,8 +289,9 @@ ${DEMO3_FIXED_TEST_REPLY}
 A 线：ep_2 打开输入 → 注入 1 → ep_3_1 → ep_5 → ep_last
 B 线：重开 → ep_2 注入 2 → ep_3_2 → ep_5 → ep_last
 C 线：重开 → ep_2 注入 3 → ep_3_3 → ep_5 → ep_last
-D 线：重开 → ep_2 注入 4 → ep_4_3 → ep_4_4（输入）→ 注入 4 → ep_3-4（输入）→ 注入 4 → ep_3_5 → ep_5 → ep_last
-E 线（亦称 F 终局）：在 ep_4_4 输入点 → 注入 5 → ep_3_6（或 ep_3-4 输入点注入 5 → ep_3_6）
+重试线（ep_2 注入 5）：ep_4_1 → ep4_2（输入）
+D 线：重开 → ep_2 注入 4 → ep_4_3 → ep_4_4（输入）→ 注入 4 → ep_3-4（过场）→ ep_4_5（20s 输入）→ 注入 4 → ep_3_5 → ep_5 → ep_last
+E 线（亦称 F 终局）：在 ep_4_4 输入点 → 注入 5 → ep_3_6（或 ep_4_5 输入点注入 5 → ep_3_6）
 `.trim();
 
 /**

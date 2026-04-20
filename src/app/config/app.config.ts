@@ -21,7 +21,7 @@ export const appRuntimeConfig = {
    * - true: 需点击左上角 Logo 5 次才切换显示/隐藏
    * - false: 直接显示 Debug 面板 + API Test（仅受 enableDebugPanel 控制）
    */
-  debugPanelRequireFiveTaps: false,
+  debugPanelRequireFiveTaps: true,
 
 
   /** 是否显示调试 UI：左下角 Debug 面板 + 首页 API 测试浮层 */
