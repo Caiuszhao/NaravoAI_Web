@@ -63,7 +63,7 @@ export function DemoEngagementPanel({
           >
             <Heart className="w-6 h-6 fill-current drop-shadow-md" />
           </button>
-          <span className="text-white font-semibold text-[12px] drop-shadow-md">{likeCountText}</span>
+          <span className="text-white font-semibold text-[12px] drop-shadow-md select-none">{likeCountText}</span>
         </div>
 
         <div
@@ -79,7 +79,7 @@ export function DemoEngagementPanel({
           >
             <MessageCircle className="w-6 h-6 fill-current drop-shadow-md" style={{ transform: 'scaleX(-1)' }} />
           </button>
-          <span className="text-white font-semibold text-[12px] drop-shadow-md">{commentCountText}</span>
+          <span className="text-white font-semibold text-[12px] drop-shadow-md select-none">{commentCountText}</span>
         </div>
 
         <button

@@ -8,9 +8,9 @@ const ADRIAN_VALE_AVATAR_URL = new URL('../../assets/Adrian_Vale.jpg', import.me
 const RHEA_VOSS_AVATAR_URL = new URL('../../assets/Rhea_Voss.jpg', import.meta.url).href;
 
 const PROFILE_STATS = [
-  { label: 'Episodes', value: '11' },
+  { label: 'GAME CHAPTERS', value: '11' },
   { label: 'Day Streak', value: '9' },
-  { label: 'Active Bonds', value: '4' },
+  { label: 'LIKED CHARACTERS', value: '4' },
   { label: 'Voice Sessions', value: '27' },
 ];
 
@@ -103,7 +103,7 @@ export function ProfileTab() {
   };
 
   return (
-    <div className="w-full h-full bg-[#020202] text-white pt-10 pb-28 overflow-y-auto hide-scrollbar">
+    <div className="w-full h-full bg-[#020202] text-white pt-10 pb-28 overflow-y-auto hide-scrollbar select-none">
       {/* Top Header / Settings */}
       <div className="w-full flex justify-end px-5 mb-4">
         <button className="text-white/40 hover:text-white/80 transition-colors p-1">
@@ -176,7 +176,7 @@ export function ProfileTab() {
         >
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-[14px] font-bold tracking-wide">Continue Watching</h3>
+              <h3 className="text-[14px] font-bold tracking-wide">Continue Playing</h3>
               <p className="text-[9.5px] text-white/40 uppercase tracking-[0.15em] mt-1 font-semibold">
                 Your active story routes
               </p>

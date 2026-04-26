@@ -26,6 +26,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(true);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const isProgrammaticScrollRef = useRef(false);
+  const activeDemoIdxRef = useRef(0);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(min-width: 1024px)').matches;
@@ -35,6 +36,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
   const handleSelectDemo = (nextIndex: number) => {
     const clampedIndex = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+    activeDemoIdxRef.current = clampedIndex;
     setHasActivatedDemoPlayback(true);
     setActiveDemoIdx(clampedIndex);
 
@@ -55,14 +57,14 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
     const h = container.clientHeight;
     if (h <= 0) return;
-    const nextIndex = Math.round(container.scrollTop / h);
-    const clamped = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
-    let becameDifferent = false;
-    setActiveDemoIdx((prev) => {
-      if (clamped !== prev) becameDifferent = true;
-      return clamped;
-    });
-    if (becameDifferent) setHasActivatedDemoPlayback(true);
+    const targetIndex = Math.round(container.scrollTop / h);
+    const clampedTarget = Math.max(0, Math.min(DEMOS.length - 1, targetIndex));
+    const currentIndex = activeDemoIdxRef.current;
+    if (clampedTarget === currentIndex) return;
+
+    // Clamp every physical scroll gesture to a single adjacent demo transition.
+    const direction = clampedTarget > currentIndex ? 1 : -1;
+    handleSelectDemo(currentIndex + direction);
   };
 
   /**
@@ -122,6 +124,10 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
     mediaQueryList.addEventListener('change', handleViewportChange);
     return () => mediaQueryList.removeEventListener('change', handleViewportChange);
   }, []);
+
+  useEffect(() => {
+    activeDemoIdxRef.current = activeDemoIdx;
+  }, [activeDemoIdx]);
 
   return (
     <FeedPrefetchAbortProvider signal={feedPrefetchSession.controller.signal}>

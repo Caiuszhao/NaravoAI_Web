@@ -20,7 +20,7 @@ type DemoEpisodesDrawerProps = {
 
 export function DemoEpisodesDrawer({
   isOpen,
-  title = 'Episodes',
+  title = 'Game Chapters',
   subtitle,
   episodes,
   onClose,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MousePointerClick, Heart } from 'lucide-react';
+import { MousePointerClick, Heart, X } from 'lucide-react';
 import { STORY1_VIDEOS } from '../storyVideos';
 import { useDemoDebug } from '../context/DemoDebugContext';
 import { useFeedPrefetchAbortSignal } from '../context/FeedPrefetchAbortContext';
@@ -315,6 +315,7 @@ export function DemoFeed({
     () => SESSION_RESOLVED_SOURCES.intro !== VIDEO_ASSET_URLS.intro
   );
   const [showBranchReplay, setShowBranchReplay] = useState(false);
+  const [showDemo1EndPopup, setShowDemo1EndPopup] = useState(false);
   const [isBranchTransitionLoading, setIsBranchTransitionLoading] = useState(false);
   const [isInteractionButtonPressed, setIsInteractionButtonPressed] = useState(false);
   const [interactionRippleIds, setInteractionRippleIds] = useState<number[]>([]);
@@ -429,7 +430,7 @@ export function DemoFeed({
     getActiveVideo,
     bindingKey: `${activeVideoSlot}:${currentVideoSrc}`,
     canTogglePause: () =>
-      storyPhaseRef.current !== 'loop' && !isCommentsOpen && !isCharactersOpen && !showBranchReplay,
+      storyPhaseRef.current !== 'loop' && !isCommentsOpen && !isCharactersOpen && !showBranchReplay && !showDemo1EndPopup,
     onAfterResume: () => {
       hasUserInteractedRef.current = true;
     },
@@ -481,7 +482,7 @@ export function DemoFeed({
       return;
     }
 
-    if (isPausedByUser || showBranchReplay || !isIntroReady) return;
+    if (isPausedByUser || showBranchReplay || showDemo1EndPopup || !isIntroReady) return;
 
     const activeSource = slotSources[activeVideoSlot];
     if (!activeSource || activeSource !== currentVideoSrc || pendingSwitchSlotRef.current !== null) return;
@@ -489,7 +490,7 @@ export function DemoFeed({
     const activeVideo = getActiveVideo();
     if (!activeVideo) return;
     void activeVideo.play().catch(() => undefined);
-  }, [allowPlayback, isPausedByUser, showBranchReplay, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
+  }, [allowPlayback, isPausedByUser, showBranchReplay, showDemo1EndPopup, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
 
   useEffect(() => {
     if (isActive) return;
@@ -1026,6 +1027,7 @@ export function DemoFeed({
     finalizeLoopSpeedSession('branch-selected');
     const requestId = ++branchTransitionRequestIdRef.current;
     setShowBranchReplay(false);
+    setShowDemo1EndPopup(false);
     interactionLockedRef.current = true;
     stopLoopDecision();
     setIsBranchTransitionLoading(true);
@@ -1052,7 +1054,11 @@ export function DemoFeed({
       setStoryPhase('loop');
       return;
     }
-    if (phase === 'branch_click' || phase === 'branch_hold' || phase === 'branch_rapid') {
+    if (phase === 'branch_click' || phase === 'branch_hold') {
+      setShowDemo1EndPopup(true);
+      return;
+    }
+    if (phase === 'branch_rapid') {
       setShowBranchReplay(true);
     }
   };
@@ -1061,6 +1067,7 @@ export function DemoFeed({
     branchTransitionRequestIdRef.current += 1;
     pendingSwitchSlotRef.current = null;
     setShowBranchReplay(false);
+    setShowDemo1EndPopup(false);
     interactionLockedRef.current = false;
     setIsBranchTransitionLoading(false);
     resetPauseUiState();
@@ -1692,13 +1699,57 @@ export function DemoFeed({
             isPausedByUser &&
             storyPhase !== 'loop' &&
             !showBranchReplay &&
-            !isBranchTransitionLoading
+            !isBranchTransitionLoading &&
+            !showDemo1EndPopup
           }
           onResume={handleResumePlayback}
           showReplayButton={isBranchPhase && showBranchReplay}
           replayLabel="Replay"
           onReplay={handleReplayFromStart}
         />
+
+        {showDemo1EndPopup && (
+          <div className="absolute left-0 right-0 bottom-[6.75rem] z-[75] px-4 pointer-events-none">
+            <div className="mx-auto max-w-[520px] rounded-2xl border border-white/15 bg-black/55 backdrop-blur-xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.42)] pointer-events-auto flex flex-col gap-2">
+              <div className="flex justify-end w-full">
+                <button
+                  onClick={() => {
+                    setShowDemo1EndPopup(false);
+                    setShowBranchReplay(true);
+                  }}
+                  className="p-1 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-colors -mr-1"
+                  aria-label="Close dialog"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-4 w-full pb-1">
+                <p className="text-[14px] leading-relaxed text-white/92 whitespace-pre-wrap">
+                  {storyPhase === 'branch_hold'
+                    ? 'You held the gate steady. Rhea slipped through just in time. The immediate danger has passed, but the wasteland is still unforgiving.'
+                    : 'You barely made it through the gate. The horde is locked out, but Rhea is exhausted and needs to know your next move.'}
+                </p>
+                <div className="flex items-center justify-between bg-white/5 rounded-xl p-3 border border-white/5 w-full mt-1">
+                  <div className="flex flex-col">
+                    <span className="text-[13px] font-semibold text-white/90">Continue the Story</span>
+                    <span className="text-[11px] text-white/50 mt-0.5">Chat directly with Rhea Voss</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowDemo1EndPopup(false);
+                      setShowBranchReplay(true);
+                      handleOpenCharacters(STORY_CONFIG.id);
+                    }}
+                    className="text-[12px] font-medium text-black bg-white hover:bg-white/90 transition-colors px-3.5 py-1.5 rounded-full shadow-sm whitespace-nowrap"
+                  >
+                    Chat Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isBranchTransitionLoading && (
           <div data-ui-layer="true" className="absolute inset-0 z-30 flex items-center justify-center bg-black/28 backdrop-blur-[2px] pointer-events-none">

@@ -64,7 +64,7 @@ const INTERACTIONS = [
 
 export function CharactersTab() {
   return (
-    <div className="w-full h-full bg-[#020202] text-white pt-14 pb-28 overflow-y-auto hide-scrollbar">
+    <div className="w-full h-full bg-[#020202] text-white pt-14 pb-28 overflow-y-auto hide-scrollbar select-none">
       <div className="px-5 mb-6">
         <h1 className="text-[22px] font-bold tracking-wide" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
           Connections

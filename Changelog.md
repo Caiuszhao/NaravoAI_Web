@@ -1,3 +1,87 @@
+## 2026-04-20 变更补录（后续更新）
+
+### Range
+- `e556367b4afa73d1c96f5d6b5b7b25fe69e7d3b1..1a2f34cb95a9f9d30f6f51cd750293f4fdc21833`
+
+### Summary
+- Demo2/Demo3 的互动链路继续完善：修复语音输入与倒计时时长不一致问题，补充输入视频循环，降低交互中断风险并提升连续体验。
+- 引入 `Profile/Characters` 相关页面与底部导航组件，扩展 Demo 容器内的多页面切换能力，支撑后续“角色与主页”路径演示。
+- 互动层新增 `EpisodesDrawer` 与预取中断上下文，配合 `demo3Prefetch`、`generateClient`、`promptTtsClient` 等工具更新，提升请求并发下的稳定性与可控性。
+- Demo 内容与素材侧继续更新：cast/场景与资源（图片、视频）同步调整，同时修复 `DemoFeed`/`LegacyDemoScreen` 的文本选中冲突。
+- 构建与运行配置更新：`vite.config.ts` 与 `dist` 产物随功能迭代同步变化，并新增本地证书/密钥文件用于当前联调环境配置。
+
+### Commits
+- a0d7156 `update cast` (Caiuszhao)
+- 19ed380 `add prompt test` (smith)
+- 7f76170 `fix voice input bugs` (smith)
+- 04fe5f2 `增加导航\角色页面` (Caiuszhao)
+- 50a9d7b `增加 Profile 页面设计` (Caiuszhao)
+- 9ca85ee `增加 Profile 页面设计` (Caiuszhao)
+- 784c60d `feat: update profile page component` (Caiuszhao)
+- e2ba1d2 `fix demo 2 performance and prompt` (smith)
+- 7836a5a `fix: disable text selection for demo title and description` (Caiuszhao)
+- 8dcf12b `fix the demo 2 performance issue` (smith)
+- c522eb7 `fix merge profile conflict` (smith)
+- ecdd5bb `fix input count down is 20s, and the input video len is 10s, add input video loop` (smith)
+- 1a2f34c `fix demo 02 bugs` (smith)
+
+### Files Changed
+- 联调与密钥文件：
+  - A `192.168.31.213-key.pem`
+  - A `192.168.31.213.pem`
+  - A `cert.pem`
+  - A `key.pem`
+- 页面与组件：
+  - M `src/app/App.tsx`
+  - A `src/app/components/CharactersTab.tsx`
+  - A `src/app/components/DemoBottomNav.tsx`
+  - M `src/app/components/DemoDebugPanel.tsx`
+  - M `src/app/components/DemoFeed.tsx`
+  - M `src/app/components/DemoPage.tsx`
+  - M `src/app/components/GenerateApiTestDialog.tsx`
+  - M `src/app/components/LegacyDemoScreen.tsx`
+  - A `src/app/components/ProfileTab.tsx`
+- 配置与上下文：
+  - M `src/app/config/app.config.ts`
+  - A `src/app/config/prompt.config.ts`
+  - A `src/app/context/FeedPrefetchAbortContext.tsx`
+- 互动模块与场景：
+  - M `src/app/interactive/engagement/DemoCastDrawer.tsx`
+  - M `src/app/interactive/engagement/DemoEngagementPanel.tsx`
+  - A `src/app/interactive/engagement/DemoEpisodesDrawer.tsx`
+  - M `src/app/interactive/scenarios/demoScenarios.ts`
+- 工具与媒体：
+  - M `src/app/storyVideos.ts`
+  - A `src/app/utils/asrVoiceInputClient.ts`
+  - A `src/app/utils/audioWav.ts`
+  - M `src/app/utils/demo3BranchTest.ts`
+  - M `src/app/utils/demo3NarrationPrompt.ts`
+  - M `src/app/utils/demo3Prefetch.ts`
+  - A `src/app/utils/extractEmotionType.ts`
+  - M `src/app/utils/generateClient.ts`
+  - A `src/app/utils/mergeAbortSignals.ts`
+  - M `src/app/utils/promptTtsClient.ts`
+  - A `src/assets/Elysia.jpg`
+  - A `src/assets/Lesliy.mp4`
+- 构建与产物：
+  - M `vite.config.ts`
+  - M `dist/index.html`
+  - A `dist/assets/Adrian_Vale-CYh1d2pZ.jpg`
+  - D `dist/assets/Demo3-cover-D36KGEFD.jpg`
+  - A `dist/assets/Demo3-cover-Dda3gs6-.jpg`
+  - A `dist/assets/Elysia-Bv8CLzL0.jpg`
+  - A `dist/assets/Horro_Latcher-D8olCkQ-.jpg`
+  - A `dist/assets/Lesliy-Cg1CCIHV.mp4`
+  - A `dist/assets/Rhea_Voss-CwmBUeGT.jpg`
+  - A `dist/assets/index-BGqAoTn5.js`
+  - D `dist/assets/index-BgjDJakP.js`
+  - A `dist/assets/index-DNLaweKW.css`
+  - D `dist/assets/index-GQpDiDb6.css`
+- 文档：
+  - M `Changelog.md`
+
+---
+
 ## 2026-04-14 变更补录（指定区间）
 
 ### Range
@@ -115,4 +199,3 @@
 - 当前条目基于 `.git/logs/HEAD` 生成，未执行 `git diff --name-status`，文件级清单待补录。
 
 ---
-

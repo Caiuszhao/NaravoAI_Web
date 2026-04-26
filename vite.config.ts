@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import fs from "fs";
+// import fs from "fs";
 
 export default defineConfig({
   base: "./",
@@ -21,11 +21,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0', // 必须
     port: 5173,
-    https: {
-      key: fs.readFileSync('./key.pem'),
-      cert: fs.readFileSync('./cert.pem'),
-    }
-    ,
+    // https: {
+    //   key: fs.readFileSync('./key.pem'),
+    //   cert: fs.readFileSync('./cert.pem'),
+    // },
     proxy: {
       // Same-origin API in dev: browser calls https://<host>:5173/api/*,
       // Vite proxies to backend (HTTP or self-signed HTTPS) to avoid mixed-content/CORS.
