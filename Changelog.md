@@ -1,3 +1,50 @@
+## 2026-05-02 00:00 (main merge)
+
+### Range
+- `1a2f34c..18a9bc2`
+
+### Summary
+- 将 `UX_opt_426` 的最新开发内容并入 `main`：新增角色详情页与角色聊天/详情 PRD，补齐角色浏览到互动入口的页面与文档链路。
+- Demo 容器与互动组件继续迭代：`DemoPage`、`DemoFeed`、`LegacyDemoScreen`、`DemoEngagementPanel`、`DemoEpisodesDrawer` 等组件同步优化，提升互动流程一致性与稳定性。
+- 站点文案与品牌展示进一步统一：在多个页面组件中继续收敛品牌命名（`Narravo AI` → `Naravo AI`），减少对外展示不一致问题。
+- 构建配置与产物随本次功能更新同步刷新（`vite.config.ts`、`dist` 资源哈希变更），确保线上包与当前代码一致。
+- 变更日志本身同步补录，保证 main 分支历史可追溯。
+
+### Commits
+- e5dd659 `chore: sync latest local changes to UX_opt_426 and update changelog` (Caiuszhao)
+- 18a9bc2 `feat: add character detail page, PRDs for chat and details, and update UI components` (Caiuszhao)
+
+### Files Changed
+- 文档：
+  - M `Changelog.md`
+  - A `src/PRD/PRD_Character_Chat_Page.md`
+  - A `src/PRD/PRD_Character_Detail_Page.md`
+- 页面与组件：
+  - A `src/app/components/CharacterDetailPage.tsx`
+  - M `src/app/components/CharactersTab.tsx`
+  - M `src/app/components/ClosingCTASection.tsx`
+  - M `src/app/components/DemoFeed.tsx`
+  - M `src/app/components/DemoPage.tsx`
+  - M `src/app/components/HeroSection.tsx`
+  - M `src/app/components/LegacyDemoScreen.tsx`
+  - M `src/app/components/ProductThesisSection.tsx`
+  - M `src/app/components/ProfileTab.tsx`
+  - M `src/app/components/WhyThisFeelsNewSection.tsx`
+  - M `src/app/components/ui/progress.tsx`
+  - M `src/app/interactive/engagement/DemoEngagementPanel.tsx`
+  - M `src/app/interactive/engagement/DemoEpisodesDrawer.tsx`
+- 工具与配置：
+  - M `src/app/utils/mediaCache.ts`
+  - M `vite.config.ts`
+- 构建产物：
+  - M `dist/index.html`
+  - D `dist/assets/index-BGqAoTn5.js`
+  - A `dist/assets/index-CZ7ZBuzz.js`
+  - D `dist/assets/index-DNLaweKW.css`
+  - A `dist/assets/index-K-558EBj.css`
+
+---
+
 ## 2026-04-26
 - 统一品牌拼写：将全站品牌名称从 「Narravo AI」 修正为 「Naravo AI」。
 
