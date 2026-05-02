@@ -1,3 +1,6 @@
+## 2026-04-26
+- 统一品牌拼写：将全站品牌名称从 「Narravo AI」 修正为 「Naravo AI」。
+
 ## 2026-04-20 变更补录（后续更新）
 
 ### Range
@@ -89,12 +92,12 @@
 
 ### Summary
 - 对封面图资源进行体积优化，目标是降低加载开销并改善首屏体验。
-- 统一品牌拼写（`naravo` → `narravo`），减少文案/命名不一致带来的展示与认知问题。
+- 统一品牌拼写（修正为 `naravo`），减少文案/命名不一致带来的展示与认知问题。
 - 更新 cast 相关内容，补齐演示页面的角色信息展示。
 
 ### Commits
 - c846741 `opt cover img size` (Caiuszhao)
-- 660fd09 `correct naravo to narravo` (Caiuszhao)
+- 660fd09 `correct brand name to naravo` (Caiuszhao)
 - e556367 `update cast` (Caiuszhao)
 
 ### Files Changed
@@ -187,12 +190,12 @@
 
 ### Summary
 - 对封面图资源进行体积优化，目标是降低加载开销并改善首屏体验。
-- 统一品牌拼写（`naravo` → `narravo`），减少文案/命名不一致带来的展示与认知问题。
+- 统一品牌拼写（修正为 `naravo`），减少文案/命名不一致带来的展示与认知问题。
 - 更新 cast 相关内容，补齐演示页面的角色信息展示。
 
 ### Commits
 - c846741 `opt cover img size` (Caiuszhao)
-- 660fd09 `correct naravo to narravo` (Caiuszhao)
+- 660fd09 `correct brand name to naravo` (Caiuszhao)
 - e556367 `update cast` (Caiuszhao)
 
 ### Files Changed

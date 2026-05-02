@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MousePointerClick, Heart, X } from 'lucide-react';
 import { STORY1_VIDEOS } from '../storyVideos';
@@ -250,6 +250,7 @@ export function DemoFeed({
   onStoryStateChange,
   isActive = true,
   shouldAutoStart = true,
+  shouldRestoreMountedMedia = false,
 }: {
   onIndexChange?: (index: number) => void;
   activeIndex?: number;
@@ -257,6 +258,7 @@ export function DemoFeed({
   onStoryStateChange?: (snapshot: StoryPlaybackSnapshot) => void;
   isActive?: boolean;
   shouldAutoStart?: boolean;
+  shouldRestoreMountedMedia?: boolean;
 }) {
   const videoARef = useRef<HTMLVideoElement>(null);
   const videoBRef = useRef<HTMLVideoElement>(null);
@@ -354,6 +356,9 @@ export function DemoFeed({
   /** Keep in sync during render so async prefetch cannot run one frame past tab deactivation. */
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
+  const hasActivatedOnceRef = useRef(isActive || shouldRestoreMountedMedia);
+  if (isActive) hasActivatedOnceRef.current = true;
+  const shouldKeepVideoMounted = isActive || hasActivatedOnceRef.current;
 
   /** Cancels intro/loop fetch() and any merged preload as soon as Demo1 is not the visible feed. */
   const demo1InactiveAbortRef = useRef<AbortController | null>(null);
@@ -377,16 +382,8 @@ export function DemoFeed({
     branchPreloadPromiseRef.current = {};
     const videoA = videoARef.current;
     const videoB = videoBRef.current;
-    if (videoA) {
-      videoA.pause();
-      videoA.removeAttribute('src');
-      videoA.load();
-    }
-    if (videoB) {
-      videoB.pause();
-      videoB.removeAttribute('src');
-      videoB.load();
-    }
+    if (videoA) videoA.pause();
+    if (videoB) videoB.pause();
   }, [isActive]);
 
   const { push: pushDebug } = useDemoDebug();
@@ -1063,7 +1060,7 @@ export function DemoFeed({
     }
   };
 
-  const handleReplayFromStart = () => {
+  const resetDemo1PlaybackToStart = useCallback(() => {
     branchTransitionRequestIdRef.current += 1;
     pendingSwitchSlotRef.current = null;
     setShowBranchReplay(false);
@@ -1102,7 +1099,17 @@ export function DemoFeed({
     setSlotSources([introSource, null]);
     setIsVideoTransitionMaskVisible(false);
     setStoryPhase('intro');
+  }, [resetPauseUiState]);
+
+  const handleReplayFromStart = () => {
+    resetDemo1PlaybackToStart();
   };
+
+  useEffect(() => {
+    if (isActive) return;
+    if (!showBranchReplay && !showDemo1EndPopup) return;
+    resetDemo1PlaybackToStart();
+  }, [isActive, showBranchReplay, showDemo1EndPopup, resetDemo1PlaybackToStart]);
 
   const handleVideoSlotError = (slot: 0 | 1) => {
     const phase = storyPhaseRef.current;
@@ -1248,6 +1255,29 @@ export function DemoFeed({
       window.clearTimeout(fallbackTimer);
     };
   }, [isInitialFrameReady, isIntroReady, activeVideoSlot, slotSources, currentVideoSrc]);
+
+  useEffect(() => {
+    if (!shouldKeepVideoMounted) return;
+    const activeVideo = getActiveVideo();
+    if (!activeVideo) return;
+
+    const syncFrameReadyState = () => {
+      setIsInitialFrameReady(activeVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+    };
+
+    syncFrameReadyState();
+    activeVideo.addEventListener('loadeddata', syncFrameReadyState);
+    activeVideo.addEventListener('canplay', syncFrameReadyState);
+    activeVideo.addEventListener('waiting', syncFrameReadyState);
+    activeVideo.addEventListener('emptied', syncFrameReadyState);
+
+    return () => {
+      activeVideo.removeEventListener('loadeddata', syncFrameReadyState);
+      activeVideo.removeEventListener('canplay', syncFrameReadyState);
+      activeVideo.removeEventListener('waiting', syncFrameReadyState);
+      activeVideo.removeEventListener('emptied', syncFrameReadyState);
+    };
+  }, [shouldKeepVideoMounted, activeVideoSlot, slotSources, currentVideoSrc]);
 
   useEffect(() => {
     storyPhaseRef.current = storyPhase;
@@ -1491,13 +1521,13 @@ export function DemoFeed({
             <>
               <video
                 ref={videoARef}
-                src={isActive ? (slotSources[0] ?? undefined) : undefined}
+                src={shouldKeepVideoMounted ? (slotSources[0] ?? undefined) : undefined}
                 className="absolute inset-0 w-full h-full object-cover transition-opacity duration-180 pointer-events-none"
                 style={{ opacity: activeVideoSlot === 0 ? 0.85 : 0 }}
                 autoPlay={allowPlayback}
                 loop={shouldLoopSlot(0)}
                 playsInline
-                preload={isActive ? 'auto' : 'none'}
+                preload={isActive ? 'auto' : shouldKeepVideoMounted ? 'metadata' : 'none'}
                 onEnded={() => {
                   if (activeVideoSlot === 0) handleVideoEnded();
                 }}
@@ -1507,13 +1537,13 @@ export function DemoFeed({
               />
               <video
                 ref={videoBRef}
-                src={isActive ? (slotSources[1] ?? undefined) : undefined}
+                src={shouldKeepVideoMounted ? (slotSources[1] ?? undefined) : undefined}
                 className="absolute inset-0 w-full h-full object-cover transition-opacity duration-180 pointer-events-none"
                 style={{ opacity: activeVideoSlot === 1 ? 0.85 : 0 }}
                 autoPlay={allowPlayback}
                 loop={shouldLoopSlot(1)}
                 playsInline
-                preload={isActive ? 'auto' : 'none'}
+                preload={isActive ? 'auto' : shouldKeepVideoMounted ? 'metadata' : 'none'}
                 onEnded={() => {
                   if (activeVideoSlot === 1) handleVideoEnded();
                 }}

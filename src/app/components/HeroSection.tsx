@@ -57,7 +57,7 @@ export function HeroSection({
           <div className="relative flex items-center justify-center w-7 h-7">
             <img
               src={logoImg}
-              alt="Narravo AI Logo"
+              alt="Naravo AI Logo"
               className="w-7 h-7 object-contain"
               style={{ filter: 'invert(1)', borderRadius: '4px' }}
             />
@@ -67,7 +67,7 @@ export function HeroSection({
             className="text-white font-bold tracking-[0.2em] text-[15px] uppercase drop-shadow-lg"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
           >
-            Narravo AI
+            Naravo AI
           </span>
         </motion.div>
 
@@ -92,8 +92,8 @@ export function HeroSection({
           initial={{ scale: 1.08 }}
           animate={{ scale: 1 }}
           transition={{ duration: 12, ease: 'easeOut' }}
-          src="https://images.unsplash.com/photo-1750192524484-36450bbb1dd6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzY2ktZmklMjBjaW5lbWF0aWMlMjBkYXJrJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzc0NTk5NDUxfDA&ixlib=rb-4.1.0&q=80&w=1080"
-          alt="Narravo AI Cinematic Environment"
+          src="https://images.unsplash.com/photo-1750192524484-36450bbb1dd6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzY2klMjBjaW5lbWF0aWMlMjBkYXJrJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzc0NTk5NDUxfDA&ixlib=rb-4.1.0&q=80&w=1080"
+          alt="Naravo AI Cinematic Environment"
           className={`w-full h-full object-cover transition-opacity duration-700 ${
             videoReady ? 'opacity-0' : 'opacity-50'
           }`}
@@ -143,7 +143,7 @@ export function HeroSection({
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
               <span className="block mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60">
-                Narravo AI
+                Naravo AI
               </span>
               <span className="block text-[1.35rem] leading-[1.2] text-white/90 font-medium tracking-tight mb-2">
                 A character-driven interactive narrative platform
@@ -203,7 +203,7 @@ export function HeroSection({
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
                 <span className="block text-[4.5rem] xl:text-[5.5rem] leading-[1] mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50">
-                  Narravo AI
+                  Naravo AI
                 </span>
                 <span className="block text-[1.7rem] xl:text-[2rem] leading-[1.2] text-white/90 font-medium tracking-tight mb-3">
                   A character-driven interactive<br />narrative platform

@@ -9,7 +9,7 @@ const CARDS = [
   {
     title: 'Interaction lives inside the story',
     description:
-      'Narravo AI replaces menus with physical and vocal interactions, creating dynamic shifts in tension, pacing, and real-time outcomes.',
+      'Naravo AI replaces menus with physical and vocal interactions, creating dynamic shifts in tension, pacing, and real-time outcomes.',
     icon: Fingerprint,
     image: interactionImage,
     color: 'text-white group-hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]',

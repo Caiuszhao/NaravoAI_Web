@@ -1,31 +1,72 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DemoFeed } from './DemoFeed';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Fingerprint, Crosshair, Play } from 'lucide-react';
 import { LegacyDemoScreen } from './LegacyDemoScreen';
 import { DEMOS, CUSTOM_LOGO_URL } from '../interactive/scenarios/demoScenarios';
-import { FeedPrefetchAbortProvider } from '../context/FeedPrefetchAbortContext';
 import { DemoBottomNav, TabType } from './DemoBottomNav';
 import { CharactersTab } from './CharactersTab';
 import { ProfileTab } from './ProfileTab';
 
+const DEMO_MEDIA_SESSION_KEY = 'naravo:demo-page-visited-demos';
+const DEMO_MEDIA_SESSION_TTL_MS = 30 * 60 * 1000;
+
+type DemoPageVisitedState = {
+  demoIds: number[];
+  updatedAt: number;
+};
+
+const readVisitedDemoIdsFromSession = () => {
+  if (typeof window === 'undefined') return [] as number[];
+
+  try {
+    const rawValue = window.sessionStorage.getItem(DEMO_MEDIA_SESSION_KEY);
+    if (!rawValue) return [];
+
+    const parsedValue = JSON.parse(rawValue) as DemoPageVisitedState;
+    if (!Array.isArray(parsedValue.demoIds) || typeof parsedValue.updatedAt !== 'number') {
+      window.sessionStorage.removeItem(DEMO_MEDIA_SESSION_KEY);
+      return [];
+    }
+
+    if (Date.now() - parsedValue.updatedAt > DEMO_MEDIA_SESSION_TTL_MS) {
+      window.sessionStorage.removeItem(DEMO_MEDIA_SESSION_KEY);
+      return [];
+    }
+
+    return parsedValue.demoIds.filter((demoId) => Number.isInteger(demoId));
+  } catch {
+    return [];
+  }
+};
+
+const writeVisitedDemoIdsToSession = (demoIds: number[]) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const nextState: DemoPageVisitedState = {
+      demoIds,
+      updatedAt: Date.now(),
+    };
+    window.sessionStorage.setItem(DEMO_MEDIA_SESSION_KEY, JSON.stringify(nextState));
+  } catch {
+    // Ignore storage write failures and fall back to in-memory behavior.
+  }
+};
+
 export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   const [activeDemoIdx, setActiveDemoIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>('home');
-  const [feedPrefetchSession, setFeedPrefetchSession] = useState(() => ({
-    controller: new AbortController(),
-  }));
-
-  useLayoutEffect(() => {
-    setFeedPrefetchSession((prev) => {
-      prev.controller.abort();
-      return { controller: new AbortController() };
-    });
-  }, [activeDemoIdx]);
+  const [isCharacterDetailOpen, setIsCharacterDetailOpen] = useState(false);
   // Entering the demo page should start Demo 1 playback immediately.
   const [hasActivatedDemoPlayback, setHasActivatedDemoPlayback] = useState(true);
+  const [visitedDemoIds, setVisitedDemoIds] = useState<number[]>(() => readVisitedDemoIdsFromSession());
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTargetRef = useRef<number | null>(null);
+  const programmaticScrollUnlockRafRef = useRef<number | null>(null);
+  const programmaticScrollUnlockTimeoutRef = useRef<number | null>(null);
+  const scrollSettleTimeoutRef = useRef<number | null>(null);
   const activeDemoIdxRef = useRef(0);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -33,38 +74,119 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
   });
 
   const activeDemo = DEMOS[activeDemoIdx];
+  const isHomeTabActive = activeTab === 'home';
+
+  const handleRememberVisitedDemo = (demoId: number) => {
+    setVisitedDemoIds((previous) => {
+      const nextDemoIds = previous.includes(demoId) ? previous : [...previous, demoId];
+      writeVisitedDemoIdsToSession(nextDemoIds);
+      return nextDemoIds;
+    });
+  };
+
+  const clearProgrammaticScrollUnlock = () => {
+    if (programmaticScrollUnlockRafRef.current !== null) {
+      window.cancelAnimationFrame(programmaticScrollUnlockRafRef.current);
+      programmaticScrollUnlockRafRef.current = null;
+    }
+    if (programmaticScrollUnlockTimeoutRef.current !== null) {
+      window.clearTimeout(programmaticScrollUnlockTimeoutRef.current);
+      programmaticScrollUnlockTimeoutRef.current = null;
+    }
+  };
+
+  const finishProgrammaticScroll = () => {
+    clearProgrammaticScrollUnlock();
+    isProgrammaticScrollRef.current = false;
+    programmaticScrollTargetRef.current = null;
+  };
+
+  const clearScrollSettleTimeout = () => {
+    if (scrollSettleTimeoutRef.current !== null) {
+      window.clearTimeout(scrollSettleTimeoutRef.current);
+      scrollSettleTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleProgrammaticScrollUnlock = () => {
+    clearProgrammaticScrollUnlock();
+
+    const checkForScrollCompletion = () => {
+      const container = feedContainerRef.current;
+      const targetScrollTop = programmaticScrollTargetRef.current;
+      if (!container || targetScrollTop === null) {
+        finishProgrammaticScroll();
+        return;
+      }
+
+      const isAtTarget = Math.abs(container.scrollTop - targetScrollTop) <= 2;
+      if (isAtTarget) {
+        container.scrollTop = targetScrollTop;
+        finishProgrammaticScroll();
+        return;
+      }
+
+      programmaticScrollUnlockRafRef.current = window.requestAnimationFrame(checkForScrollCompletion);
+    };
+
+    programmaticScrollUnlockRafRef.current = window.requestAnimationFrame(checkForScrollCompletion);
+    programmaticScrollUnlockTimeoutRef.current = window.setTimeout(() => {
+      const container = feedContainerRef.current;
+      const targetScrollTop = programmaticScrollTargetRef.current;
+      if (container && targetScrollTop !== null) {
+        container.scrollTop = targetScrollTop;
+      }
+      finishProgrammaticScroll();
+    }, 900);
+  };
 
   const handleSelectDemo = (nextIndex: number) => {
     const clampedIndex = Math.max(0, Math.min(DEMOS.length - 1, nextIndex));
+    const container = feedContainerRef.current;
+    if (!container) {
+      activeDemoIdxRef.current = clampedIndex;
+      setHasActivatedDemoPlayback(true);
+      setActiveDemoIdx(clampedIndex);
+      return;
+    }
+
+    const targetScrollTop = clampedIndex * container.clientHeight;
+    const isAlreadyAtTargetIndex = activeDemoIdxRef.current === clampedIndex;
+    const isAlreadyAtTargetPosition = Math.abs(container.scrollTop - targetScrollTop) <= 2;
+    if (isAlreadyAtTargetIndex && isAlreadyAtTargetPosition) return;
+
     activeDemoIdxRef.current = clampedIndex;
     setHasActivatedDemoPlayback(true);
     setActiveDemoIdx(clampedIndex);
 
-    const container = feedContainerRef.current;
-    if (!container) return;
-
-    const targetScrollTop = clampedIndex * container.clientHeight;
     isProgrammaticScrollRef.current = true;
+    programmaticScrollTargetRef.current = targetScrollTop;
     container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
-    window.setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-    }, 420);
+    scheduleProgrammaticScrollUnlock();
   };
 
   const handleFeedScroll = () => {
     const container = feedContainerRef.current;
     if (!container || isProgrammaticScrollRef.current) return;
 
-    const h = container.clientHeight;
-    if (h <= 0) return;
-    const targetIndex = Math.round(container.scrollTop / h);
-    const clampedTarget = Math.max(0, Math.min(DEMOS.length - 1, targetIndex));
-    const currentIndex = activeDemoIdxRef.current;
-    if (clampedTarget === currentIndex) return;
+    clearScrollSettleTimeout();
+    scrollSettleTimeoutRef.current = window.setTimeout(() => {
+      scrollSettleTimeoutRef.current = null;
 
-    // Clamp every physical scroll gesture to a single adjacent demo transition.
-    const direction = clampedTarget > currentIndex ? 1 : -1;
-    handleSelectDemo(currentIndex + direction);
+      const latestContainer = feedContainerRef.current;
+      if (!latestContainer || isProgrammaticScrollRef.current) return;
+
+      const containerHeight = latestContainer.clientHeight;
+      if (containerHeight <= 0) return;
+
+      const settledIndex = Math.round(latestContainer.scrollTop / containerHeight);
+      const clampedIndex = Math.max(0, Math.min(DEMOS.length - 1, settledIndex));
+      if (clampedIndex === activeDemoIdxRef.current) return;
+
+      activeDemoIdxRef.current = clampedIndex;
+      setHasActivatedDemoPlayback(true);
+      setActiveDemoIdx(clampedIndex);
+    }, 90);
   };
 
   /**
@@ -72,23 +194,33 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
    * Others must stop media and prefetch (see DemoFeed / LegacyDemoScreen `isActive` handlers).
    */
   const renderDemoScreen = (index: number) => {
+    const isDemoScreenActive = isHomeTabActive && activeDemoIdx === index;
+    const shouldRestoreMountedMedia = visitedDemoIds.includes(DEMOS[index].id);
     if (index === 0) {
       return (
         <DemoFeed
           onBackHome={onBackHome}
-          isActive={activeDemoIdx === index}
+          isActive={isDemoScreenActive}
           shouldAutoStart={hasActivatedDemoPlayback}
+          shouldRestoreMountedMedia={shouldRestoreMountedMedia}
         />
       );
     }
-    return <LegacyDemoScreen demo={DEMOS[index]} onBackHome={onBackHome} isActive={activeDemoIdx === index} />;
+    return (
+      <LegacyDemoScreen
+        demo={DEMOS[index]}
+        onBackHome={onBackHome}
+        isActive={isDemoScreenActive}
+        shouldRestoreMountedMedia={shouldRestoreMountedMedia}
+      />
+    );
   };
 
   const renderTabOverlay = () => {
     if (activeTab === 'characters') {
       return (
         <div className="absolute inset-0 z-40 bg-[#020202]">
-          <CharactersTab />
+          <CharactersTab onDetailViewChange={setIsCharacterDetailOpen} />
         </div>
       );
     }
@@ -129,8 +261,20 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
     activeDemoIdxRef.current = activeDemoIdx;
   }, [activeDemoIdx]);
 
+  useEffect(() => {
+    const activeDemoId = DEMOS[activeDemoIdx]?.id;
+    if (!activeDemoId) return;
+    handleRememberVisitedDemo(activeDemoId);
+  }, [activeDemoIdx]);
+
+  useEffect(() => {
+    return () => {
+      clearProgrammaticScrollUnlock();
+      clearScrollSettleTimeout();
+    };
+  }, []);
+
   return (
-    <FeedPrefetchAbortProvider signal={feedPrefetchSession.controller.signal}>
     <div className="bg-[#020202] min-h-[100dvh] text-white font-sans selection:bg-white/30 w-full overflow-hidden flex flex-col">
       
       {/* ========================================================= */}
@@ -152,7 +296,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
           {renderTabOverlay()}
           
-          <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          {!isCharacterDetailOpen && <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />}
         </div>
       )}
 
@@ -168,7 +312,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
             <div className="relative flex items-center justify-center w-7 h-7">
               <img
                 src={CUSTOM_LOGO_URL}
-                alt="Narravo AI Logo"
+                alt="Naravo AI Logo"
                 className="w-7 h-7 object-contain"
                 style={{ filter: 'invert(1)', borderRadius: '4px' }}
               />
@@ -178,7 +322,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
               className="text-white font-bold tracking-[0.2em] text-[15px] uppercase drop-shadow-lg"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Narravo AI
+              Naravo AI
             </span>
           </div>
 
@@ -237,7 +381,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
 
                 {renderTabOverlay()}
                 
-                <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+                {!isCharacterDetailOpen && <DemoBottomNav activeTab={activeTab} onTabChange={setActiveTab} />}
               </div>
             </div>
             
@@ -331,7 +475,7 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
             <div className="relative flex items-center justify-center w-6 h-6">
               <img
                 src={CUSTOM_LOGO_URL}
-                alt="Narravo AI Logo"
+                alt="Naravo AI Logo"
                 className="w-6 h-6 object-contain"
                 style={{ filter: 'invert(1)', borderRadius: '3px' }}
               />
@@ -340,16 +484,15 @@ export function DemoPage({ onBackHome }: { onBackHome: () => void }) {
               className="text-white/50 font-bold tracking-[0.15em] text-[12px] uppercase"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Narravo AI
+              Naravo AI
             </span>
           </div>
           <p className="text-[11px] text-white/20 text-center sm:text-right">
-            © 2026 Narravo AI · Confidential Investor Demo · All rights reserved
+            © 2026 Naravo AI · Confidential Investor Demo · All rights reserved
           </p>
         </footer>
       </div>
       )}
     </div>
-    </FeedPrefetchAbortProvider>
   );
 }

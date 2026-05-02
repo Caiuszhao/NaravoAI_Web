@@ -364,10 +364,12 @@ export function LegacyDemoScreen({
   demo,
   onBackHome,
   isActive = true,
+  shouldRestoreMountedMedia = false,
 }: {
   demo: LegacyDemo;
   onBackHome?: () => void;
   isActive?: boolean;
+  shouldRestoreMountedMedia?: boolean;
 }) {
   const { push: pushDebug } = useDemoDebug();
   const { baseUrl: generateApiBaseUrl } = useApiEnv();
@@ -386,6 +388,8 @@ export function LegacyDemoScreen({
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+  const hasActivatedOnceRef = useRef(isActive || shouldRestoreMountedMedia);
+  if (isActive) hasActivatedOnceRef.current = true;
   const feedPrefetchAbortSignal = useFeedPrefetchAbortSignal();
 
   const [activeVideoIndex, setActiveVideoIndex] = useState(() => {
@@ -395,22 +399,7 @@ export function LegacyDemoScreen({
 
   const playlist = demo.videos?.length ? demo.videos : demo.videoBg ? [demo.videoBg] : [];
   const [resolvedMediaMap, setResolvedMediaMap] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (isActive) return;
-    setResolvedMediaMap((prev) => {
-      for (const v of Object.values(prev)) {
-        if (typeof v === 'string' && v.startsWith('blob:')) {
-          try {
-            URL.revokeObjectURL(v);
-          } catch {
-            // ignore
-          }
-        }
-      }
-      return {};
-    });
-  }, [isActive]);
+  const [isLegacyVideoReady, setIsLegacyVideoReady] = useState(false);
 
   const demo3UrlByFilename: Record<string, string> = {};
   if (isDemo3) {
@@ -567,6 +556,7 @@ export function LegacyDemoScreen({
     ? getDemo3ClipUrl(demo3CurrentFilename)
     : playlist[activeVideoIndex] ?? playlist[0] ?? undefined;
   const activeSrc = activeDirectSrc ? (resolvedMediaMap[activeDirectSrc] ?? activeDirectSrc) : undefined;
+  const shouldKeepMediaMounted = isActive || hasActivatedOnceRef.current;
   const demoPromptPlaceholder = DEMO_PROMPT_PLACEHOLDER_BY_ID[demo.id] ?? 'Type your reply...';
   const demo3CountdownProgress = Math.max(
     0,
@@ -814,9 +804,33 @@ export function LegacyDemoScreen({
     const v = videoRef.current;
     if (!v) return;
     v.pause();
-    v.removeAttribute('src');
-    void v.load();
   }, [isActive, isDemo3]);
+
+  useEffect(() => {
+    if (isDemo3) return;
+    const video = videoRef.current;
+    if (!video || !activeSrc || !shouldKeepMediaMounted) {
+      setIsLegacyVideoReady(false);
+      return;
+    }
+
+    const syncReadyState = () => {
+      setIsLegacyVideoReady(video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+    };
+
+    syncReadyState();
+    video.addEventListener('loadeddata', syncReadyState);
+    video.addEventListener('canplay', syncReadyState);
+    video.addEventListener('waiting', syncReadyState);
+    video.addEventListener('emptied', syncReadyState);
+
+    return () => {
+      video.removeEventListener('loadeddata', syncReadyState);
+      video.removeEventListener('canplay', syncReadyState);
+      video.removeEventListener('waiting', syncReadyState);
+      video.removeEventListener('emptied', syncReadyState);
+    };
+  }, [isDemo3, activeSrc, shouldKeepMediaMounted]);
 
   useEffect(() => {
     if (!isDemo3) return;
@@ -1169,15 +1183,24 @@ export function LegacyDemoScreen({
     const v1 = demo3Video1Ref.current;
     if (v0) {
       v0.pause();
-      v0.removeAttribute('src');
-      void v0.load();
     }
     if (v1) {
       v1.pause();
-      v1.removeAttribute('src');
-      void v1.load();
     }
   }, [isActive, isDemo3, flushDemo3NarrationAudioElement]);
+
+  useEffect(() => {
+    if (!isDemo3 || !isActive) return;
+    const activeVideo = demo3Lead === 0 ? demo3Video0Ref.current : demo3Video1Ref.current;
+    const activeSource = demo3SlotSrc[demo3Lead];
+    if (!activeSource || !activeVideo) {
+      setDemo3IsCoverVisible(true);
+      return;
+    }
+    if (activeVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setDemo3IsCoverVisible(true);
+    }
+  }, [isDemo3, isActive, demo3Lead, demo3SlotSrc]);
 
   const handleDemo3ReplayFromStart = () => {
     demo3GenerateAbortRef.current?.abort();
@@ -1688,12 +1711,22 @@ export function LegacyDemoScreen({
     }
   };
 
-  const handleLegacyReplayFromStart = () => {
+  const queueLegacyReplayFromStart = useCallback(() => {
     videoRef.current?.pause();
     legacyReplayPendingRef.current = true;
     setLegacyShowReplay(false);
     setActiveVideoIndex(0);
+  }, []);
+
+  const handleLegacyReplayFromStart = () => {
+    queueLegacyReplayFromStart();
   };
+
+  useEffect(() => {
+    if (isActive || isDemo3) return;
+    if (!legacyShowReplay) return;
+    queueLegacyReplayFromStart();
+  }, [isActive, isDemo3, legacyShowReplay, queueLegacyReplayFromStart]);
 
   useEffect(() => {
     if (isDemo3) return;
@@ -1775,7 +1808,7 @@ export function LegacyDemoScreen({
           <>
             <video
               ref={demo3Video0Ref}
-              src={isActive ? demo3SlotSrc[0] || undefined : undefined}
+              src={shouldKeepMediaMounted ? demo3SlotSrc[0] || undefined : undefined}
               className={`absolute inset-0 w-full h-full object-cover ${
                 demo3Lead === 0 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
@@ -1783,12 +1816,12 @@ export function LegacyDemoScreen({
               loop={demo3CurrentFilename === 'ep_last.mp4' || demo3LoopInputClipDuringCountdown}
               muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
               playsInline
-              preload="auto"
+              preload={isActive ? 'auto' : shouldKeepMediaMounted ? 'metadata' : 'none'}
               onEnded={handleDemo3VideoEnded}
             />
             <video
               ref={demo3Video1Ref}
-              src={isActive ? demo3SlotSrc[1] || undefined : undefined}
+              src={shouldKeepMediaMounted ? demo3SlotSrc[1] || undefined : undefined}
               className={`absolute inset-0 w-full h-full object-cover ${
                 demo3Lead === 1 ? 'opacity-85 z-[2]' : 'opacity-0 z-[1]'
               }`}
@@ -1796,20 +1829,20 @@ export function LegacyDemoScreen({
               loop={demo3CurrentFilename === 'ep_last.mp4' || demo3LoopInputClipDuringCountdown}
               muted={!demo.playVideoAudio || demo3CurrentFilename === 'ep_last.mp4'}
               playsInline
-              preload="auto"
+              preload={isActive ? 'auto' : shouldKeepMediaMounted ? 'metadata' : 'none'}
               onEnded={handleDemo3VideoEnded}
             />
           </>
         ) : (
           <video
             ref={videoRef}
-            src={isActive ? activeSrc : undefined}
+            src={shouldKeepMediaMounted ? activeSrc : undefined}
             className="w-full h-full object-cover opacity-85"
             autoPlay={isActive}
             loop={false}
             muted={!demo.playVideoAudio}
             playsInline
-            preload="auto"
+            preload={isActive ? 'auto' : shouldKeepMediaMounted ? 'metadata' : 'none'}
             onEnded={() => {
               if (playlist.length <= 1) {
                 setLegacyShowReplay(true);
@@ -1825,6 +1858,15 @@ export function LegacyDemoScreen({
               });
             }}
           />
+        )}
+        {!isDemo3 && isActive && !isLegacyVideoReady && (
+          <div className="absolute inset-0 z-[5] pointer-events-none">
+            <div className="w-full h-full bg-black/38" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className="w-14 h-14 rounded-full border border-white/20 border-t-white/85 animate-spin" />
+              <p className="mt-3 text-[10px] uppercase tracking-[0.24em] text-white/80">Loading Demo</p>
+            </div>
+          </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_10%,rgba(0,0,0,0.55)_100%)]" />
